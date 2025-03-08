@@ -1,4 +1,5 @@
 import streamlit as st
+from utils.common import format_vote_data_with_thresh
 from utils.db import get_connection
 import csv
 from io import StringIO
@@ -29,11 +30,19 @@ def show(selected_date):
     conn.close()
     
     if results:
+        row1_col1, row1_col2 = st.columns(2)
         # テキストファイルExportボタン
         codes = [row[0] for row in results]
         file_content = "\n".join(codes)
         filename = f"投票結果{selected_date.strftime('%Y%m%d')}.txt"
-        st.download_button("銘柄コードExport", data=file_content, file_name=filename, mime="text/plain")
+        with row1_col1:
+            st.download_button("銘柄コードExport", data=file_content, file_name=filename, mime="text/plain")
+
+        sorted_results_with_thresh = format_vote_data_with_thresh(results)
+        if sorted_results_with_thresh:
+            filename = f"投票結果{selected_date.strftime('%Y%m%d')}_票数付.txt"
+            with row1_col2:
+                st.download_button("銘柄コードExport(票数付)", data=sorted_results_with_thresh, file_name=filename, mime="text/plain")
         
         # CSVファイルExportボタン
         csv_buffer = StringIO()
