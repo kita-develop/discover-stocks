@@ -44,6 +44,7 @@ def show(selected_date):
             with row1_col2:
                 st.download_button("銘柄コードExport(票数付)", data=sorted_results_with_thresh, file_name=filename, mime="text/plain")
         
+        row2_col1, row2_col2 = st.columns(2)
         # CSVファイルExportボタン
         csv_buffer = StringIO()
         csv_writer = csv.writer(csv_buffer)
@@ -60,12 +61,13 @@ def show(selected_date):
         csv_bytes = csv_str.encode('shift-jis', errors='replace')
         
         csv_filename = f"投票結果{selected_date.strftime('%Y%m%d')}.csv"
-        st.download_button(
-            "投票結果CSV Export",
-            data=csv_bytes,
-            file_name=csv_filename,
-            mime="text/csv"
-        )
+        with row2_col1:
+            st.download_button(
+                "投票結果CSV Export",
+                data=csv_bytes,
+                file_name=csv_filename,
+                mime="text/csv"
+            )
         
         # Excelファイルのエクスポート
         excel_filename = f"投票結果{selected_date.strftime('%Y%m%d')}.xlsx"
@@ -99,13 +101,13 @@ def show(selected_date):
                 cell.style = 'Hyperlink'
         
         excel_data = excel_buffer.getvalue()
-        
-        st.download_button(
-            "投票結果Excel Export",
-            data=excel_data,
-            file_name=excel_filename,
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+        with row2_col2:
+            st.download_button(
+                "投票結果Excel Export",
+                data=excel_data,
+                file_name=excel_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
         
         st.markdown("---")
 
