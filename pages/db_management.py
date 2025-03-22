@@ -9,13 +9,16 @@ from utils.db import get_connection
 def show(selected_date):
     st.title("データベース管理")
     
-    tab1, tab2 = st.tabs(["エクスポート", "インポート"])
+    tab1, tab2, tab3 = st.tabs(["エクスポート", "インポート", "データベース整理"])
     
     with tab1:
         show_export()
     
     with tab2:
         show_import()
+
+    with tab3:
+        show_wal_checkpoint()
 
 def show_export():
     st.subheader("データベースエクスポート")
@@ -125,3 +128,25 @@ def show_import():
                         
         except Exception as e:
             st.error(f"ファイルの読み込みに失敗しました: {str(e)}") 
+
+def show_wal_checkpoint():
+    st.subheader("データベース整理")
+
+    # WALチェックポイントを実行する関数
+    def run_wal_checkpoint():
+        conn = get_connection()
+        c = conn.cursor()
+
+        try:
+            c.execute("PRAGMA wal_checkpoint(FULL);")
+
+        except Exception as e:
+            # PRAGMA wal_checkpointはトランザクション外のコマンドのためRollBack不可
+            st.error(f"データベース整理に失敗しました: {str(e)}") 
+
+        finally:
+            conn.close()
+
+    if st.button("データベース整理実行"):
+        run_wal_checkpoint()
+        st.success("データベース整理を実行しました")

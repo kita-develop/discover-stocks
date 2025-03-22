@@ -14,7 +14,11 @@ def init_db():
     """
     conn = get_connection()
     c = conn.cursor()
-    
+
+    # DB高速化
+    c.execute("PRAGMA journal_mode=WAL;")
+    c.execute("PRAGMA synchronous=NORMAL;")
+
     # 銘柄発掘アンケートの回答保存テーブル
     c.execute(
         """
