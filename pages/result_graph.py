@@ -6,6 +6,7 @@ from utils.db import get_connection
 
 # 取得・表示の最大日数 (DB負荷考慮)
 MAX_DAYS=365
+DEFAULT_DAYS=90
 
 def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
@@ -18,10 +19,10 @@ def show(selected_date):
         return bool(re.match(pattern, string))
 
     sql_template = """
-        SELECT vote_date, stock_code, count(stock_code) AS vote_count
-         FROM vote WHERE vote_date BETWEEN ? AND ? 
-         AND stock_code REGEXP ?
-         GROUP BY vote_date, stock_code;
+        SELECT a.vote_date, a.stock_code || ' ' || COALESCE(b.stock_name, ''), count(a.stock_code) AS vote_count
+         FROM vote AS a LEFT OUTER JOIN stock_master AS b ON a.stock_code = b.stock_code WHERE a.vote_date BETWEEN ? AND ? 
+         AND a.stock_code REGEXP ?
+         GROUP BY a.vote_date, a.stock_code;
     """
 
     # voteテーブルから、各投票回の投票数を取得する
@@ -70,8 +71,16 @@ def show(selected_date):
 
             # スライダーで日付範囲を選択
             dates = pd.date_range(start = (selected_date - datetime.timedelta(days=MAX_DAYS)).strftime("%Y-%m-%d"), end = selected_date_str, freq = "D")
-            start_date = st.slider("開始日", min_value = dates.min().to_pydatetime(), max_value = dates.max().to_pydatetime(), value = dates.min().to_pydatetime(), key="slider_min")
-            end_date   = st.slider("終了日", min_value = dates.min().to_pydatetime(), max_value = dates.max().to_pydatetime(), value = dates.max().to_pydatetime(), key="slider_max")
+            default_start_date = max(dates.min(), pd.Timestamp(selected_date) - pd.Timedelta(days=DEFAULT_DAYS))
+
+            # スライダー用意
+            start_date, end_date = st.slider(
+                "表示期間を選択してください:", 
+                min_value=dates.min().to_pydatetime(),
+                max_value=dates.max().to_pydatetime(),
+                value=(default_start_date.to_pydatetime(), dates.max().to_pydatetime()),
+                format="YYYY-MM-DD"
+            )
 
             result_list = [
                 {"result_key": "日本株", "result_value": results_jp},
