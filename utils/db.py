@@ -30,7 +30,8 @@ def init_db():
         )
         """
     )
-    
+    c.execute("CREATE INDEX IF NOT EXISTS idx_survey_date_stock_code ON survey (survey_date, stock_code);")
+
     # 投票結果を保存するテーブル
     c.execute(
         """
@@ -42,7 +43,8 @@ def init_db():
         )
         """
     )
-    
+    c.execute("CREATE INDEX IF NOT EXISTS idx_vote_date_stock_code ON vote (vote_date, stock_code);")
+
     # 銘柄マスタテーブルを追加
     c.execute(
         """
@@ -52,7 +54,7 @@ def init_db():
         )
         """
     )
-    
+
     conn.commit()
     conn.close()
     
