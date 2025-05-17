@@ -194,7 +194,10 @@ def save_vote_data(selected_date_str, results):
             # 進捗バーを更新
             progress = (i + 1) / len(selected_codes)
             progress_bar.progress(progress)
-        
+
+        # 統計情報の更新 (適宜)
+        c.execute("PRAGMA optimize;")
+
         conn.commit()
         conn.close()
         

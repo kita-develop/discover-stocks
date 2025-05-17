@@ -18,7 +18,7 @@ def show(selected_date):
         show_import()
 
     with tab3:
-        show_wal_checkpoint()
+        show_maintenance_db()
 
 def show_export():
     st.subheader("データベースエクスポート")
@@ -113,11 +113,14 @@ def show_import():
                                         f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})",
                                         values
                                     )
-                        
+
+                        # 統計情報の更新
+                        c.execute("ANALYZE;")
+
                         # コミット
                         conn.commit()
                         st.success("データのインポートが完了しました。")
-                        
+
                     except Exception as e:
                         # エラー時はロールバック
                         conn.rollback()
@@ -129,16 +132,20 @@ def show_import():
         except Exception as e:
             st.error(f"ファイルの読み込みに失敗しました: {str(e)}") 
 
-def show_wal_checkpoint():
+def show_maintenance_db():
     st.subheader("データベース整理")
 
-    # WALチェックポイントを実行する関数
-    def run_wal_checkpoint():
+    # データベース整理の実行
+    def run_maintenance_db():
         conn = get_connection()
         c = conn.cursor()
 
         try:
+            # WALチェックポイントを実行する関数
             c.execute("PRAGMA wal_checkpoint(FULL);")
+
+            # 統計情報の更新
+            c.execute("ANALYZE;")
 
         except Exception as e:
             # PRAGMA wal_checkpointはトランザクション外のコマンドのためRollBack不可
@@ -148,5 +155,5 @@ def show_wal_checkpoint():
             conn.close()
 
     if st.button("データベース整理実行"):
-        run_wal_checkpoint()
+        run_maintenance_db()
         st.success("データベース整理を実行しました")

@@ -179,6 +179,10 @@ def save_new_stock(stock_code, stock_name):
             """,
             (stock_code, stock_name)
         )
+
+        # 統計情報の更新 (適宜)
+        c.execute("PRAGMA optimize;")
+
         conn.commit()
         st.success(f"銘柄コード {stock_code} を登録/更新しました。")
     except Exception as e:
@@ -193,7 +197,7 @@ def save_bulk_stocks(df):
     success_count = 0
     update_count = 0
     error_count = 0
-    
+ 
     for _, row in df.iterrows():
         try:
             # 既存のレコードをチェック
@@ -214,11 +218,14 @@ def save_bulk_stocks(df):
                 update_count += 1
             else:
                 success_count += 1
-                
+
         except Exception as e:
             error_count += 1
             st.error(f"銘柄コード {row['銘柄コード']} の登録に失敗しました: {str(e)}")
-    
+
+    # 統計情報の更新
+    c.execute("ANALYZE stock_master;")
+
     conn.commit()
     conn.close()
     

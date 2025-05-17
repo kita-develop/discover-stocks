@@ -70,6 +70,9 @@ def save_survey_data(selected_date_str):
                 "INSERT INTO survey (survey_date, stock_code, created_at) VALUES (?, ?, ?)",
                 (selected_date_str, code, now)
             )
-    
+
+    # 統計情報の更新 (適宜)
+    c.execute("PRAGMA optimize;")
+
     conn.commit()
     conn.close() 
