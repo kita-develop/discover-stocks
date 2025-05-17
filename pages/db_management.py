@@ -147,6 +147,9 @@ def show_maintenance_db():
             # 統計情報の更新
             c.execute("ANALYZE;")
 
+            # DBファイルのサイズ最適化
+            c.execute("VACUUM;")
+
         except Exception as e:
             # PRAGMA wal_checkpointはトランザクション外のコマンドのためRollBack不可
             st.error(f"データベース整理に失敗しました: {str(e)}") 
