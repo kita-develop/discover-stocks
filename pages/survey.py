@@ -60,19 +60,16 @@ def show(selected_date):
 
 def save_survey_data(selected_date_str):
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     for i in range(MAX_SETS):
         if f"confirmed_{i}" in st.session_state:
             code = st.session_state[f"confirmed_{i}"]
             c.execute(
-                "INSERT INTO survey (survey_date, stock_code, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO survey (survey_date, stock_code, created_at) VALUES (%s, %s, %s)",
                 (selected_date_str, code, now)
             )
-
-    # 統計情報の更新 (適宜)
-    c.execute("PRAGMA optimize;")
 
     conn.commit()
     conn.close() 

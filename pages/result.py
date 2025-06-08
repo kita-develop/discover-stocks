@@ -57,13 +57,13 @@ def show(selected_date):
     
     # voteテーブルから、対象日の各銘柄の投票数を集計（多い順）
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     c.execute(
         """
         SELECT v.stock_code, COUNT(*) as vote_count, m.stock_name
         FROM vote v
         LEFT JOIN stock_master m ON v.stock_code = m.stock_code
-        WHERE v.vote_date = ?
+        WHERE v.vote_date = %s
         GROUP BY v.stock_code
         ORDER BY vote_count DESC
         """,
