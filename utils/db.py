@@ -9,8 +9,7 @@ def get_db_path():
     if os.environ.get('WEBSITE_INSTANCE_ID'):
         # Azureの場合は/home配下を使用
         db_dir = '/home/data'
-        if not os.path.exists(db_dir):
-            os.makedirs(db_dir)
+        os.makedirs(db_dir, exist_ok=True)
         return os.path.join(db_dir, 'survey.db')
     else:
         # ローカル開発環境
