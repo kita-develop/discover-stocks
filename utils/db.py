@@ -1,10 +1,25 @@
 import sqlite3
+import os
 from datetime import datetime
 import streamlit as st
 
+def get_db_path():
+    """データベースファイルのパスを取得"""
+    # Azure App Serviceの永続的なストレージパス
+    if os.environ.get('WEBSITE_INSTANCE_ID'):
+        # Azureの場合は/home配下を使用
+        db_dir = '/home/data'
+        if not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+        return os.path.join(db_dir, 'survey.db')
+    else:
+        # ローカル開発環境
+        return 'survey.db'
+
 def get_connection():
     # SQLite の DB ファイル (survey.db) に接続（マルチスレッド対応のため check_same_thread=False）
-    return sqlite3.connect("survey.db", check_same_thread=False)
+    db_path = get_db_path()
+    return sqlite3.connect(db_path, check_same_thread=False)
 
 @st.cache_resource(ttl=24*3600)  # 24時間（1日）でキャッシュを無効化
 def init_db():
