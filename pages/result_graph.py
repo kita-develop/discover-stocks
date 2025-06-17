@@ -52,6 +52,22 @@ def show(selected_date):
         )
     )
     results_us = c.fetchall()
+
+    # 投票数の合計と投票ボタンが押された回数を取得 (#13の追従)
+    sql_template = """
+        SELECT a.vote_date, COUNT(a.id) as total_votes, COUNT(DISTINCT a.created_at) as vote_sessions
+         FROM vote AS a
+         WHERE a.vote_date BETWEEN ? AND ?
+         GROUP BY a.vote_date ORDER BY a.vote_date ASC;
+    """
+    c = conn.cursor()
+    c.execute(
+        sql_template,
+        ((selected_date - datetime.timedelta(days=MAX_DAYS)).strftime("%Y-%m-%d"),
+         selected_date_str
+        )
+    )
+    results_vote_count = c.fetchall()
     conn.close()
 
     if results_jp or results_us:
@@ -103,6 +119,23 @@ def show(selected_date):
 
                 else:
                     st.line_chart(filtered_df, x="日付", y="投票数", color="銘柄コード", use_container_width=True)
+
+            # 投票数の合計と投票ボタンが押された回数の表示 (#13の追従)
+            # SQLの結果をDataFrameに変換
+            df_vote = pd.DataFrame(results_vote_count, columns=["日付", "投票数の合計", "投票ボタンが押された回数"])
+            df_vote["日付"] = pd.to_datetime(df_vote["日付"])  # 日付をDatetime型に変換
+
+            # スライダーに従って日付フィルタ
+            filtered_df_vote = df_vote[(df_vote["日付"] >= pd.to_datetime(start_date)) & (df_vote["日付"] <= pd.to_datetime(end_date))]
+            filtered_df_vote["日付"] = filtered_df_vote["日付"].dt.strftime("%m月%d日")
+
+            # 投票数のグラフ
+            st.subheader("投票数の合計の推移")
+            st.line_chart(filtered_df_vote.set_index("日付")[["投票数の合計"]], use_container_width=True)
+
+            # 投票セッション数のグラフ
+            st.subheader("投票ボタンが押された回数の推移")
+            st.line_chart(filtered_df_vote.set_index("日付")[["投票ボタンが押された回数"]], use_container_width=True)
 
         except ImportError:
             st.error("matplotlib, pandas ライブラリが必要です。'pip3 install matplotlib, pandas'でインストールしてください。")
