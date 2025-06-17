@@ -57,14 +57,14 @@ def show(selected_date):
     
     # 投票数の合計と投票ボタンが押された回数を取得
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     
     # 投票数の合計を取得
     c.execute(
         """
         SELECT COUNT(*) as total_votes
         FROM vote
-        WHERE vote_date = ?
+        WHERE vote_date = %s
         """,
         (selected_date_str,)
     )
@@ -76,7 +76,7 @@ def show(selected_date):
         """
         SELECT COUNT(DISTINCT created_at) as vote_sessions
         FROM vote
-        WHERE vote_date = ?
+        WHERE vote_date = %s
         """,
         (selected_date_str,)
     )
@@ -96,7 +96,7 @@ def show(selected_date):
         SELECT v.stock_code, COUNT(*) as vote_count, m.stock_name
         FROM vote v
         LEFT JOIN stock_master m ON v.stock_code = m.stock_code
-        WHERE v.vote_date = ?
+        WHERE v.vote_date = %s
         GROUP BY v.stock_code
         ORDER BY vote_count DESC
         """,

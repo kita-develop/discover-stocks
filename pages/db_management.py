@@ -1,5 +1,4 @@
 import streamlit as st
-import sqlite3
 import json
 from datetime import datetime
 from io import BytesIO
@@ -28,13 +27,18 @@ def show_export():
     
     # 各テーブルのデータを取得
     tables = {
-        'stock_master': pd.read_sql_query("SELECT * FROM stock_master", conn),
-        'survey': pd.read_sql_query("SELECT * FROM survey", conn),
-        'vote': pd.read_sql_query("SELECT * FROM vote", conn)
+        'stock_master': pd.read_sql_query("SELECT * FROM stock_master ORDER BY stock_code ASC", conn),
+        'survey': pd.read_sql_query("SELECT * FROM survey ORDER BY id ASC", conn),
+        'vote': pd.read_sql_query("SELECT * FROM vote ORDER BY id ASC", conn)
     }
-    
+
     conn.close()
-    
+
+    # Timestamp型がjson.dumps()時にエラーになるためisoformatでstr変換している
+    for df in tables.values():
+        for col in df.select_dtypes(include=['datetime64[ns]']).columns:
+            df[col] = df[col].apply(lambda x: x.isoformat() if pd.notnull(x) else None)
+
     # エクスポートファイル名
     export_filename = f"db_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     
@@ -85,37 +89,38 @@ def show_import():
             if 'tables' not in import_data:
                 st.error("無効なバックアップファイルです。")
                 return
-            
+
             if st.button("インポートを実行"):
                 with st.spinner("データをインポート中..."):
                     conn = get_connection()
-                    c = conn.cursor()
-                    
+                    c = conn.cursor(buffered=True)
+
                     # トランザクション開始
-                    c.execute("BEGIN TRANSACTION")
-                    
+                    c.execute("START TRANSACTION;")
                     try:
                         # 各テーブルのデータをインポート
                         for table_name, records in import_data['tables'].items():
                             # テーブルを空にする
-                            c.execute(f"DELETE FROM {table_name}")
-                            
+                            c.execute(f"DELETE FROM {table_name};")
+
                             if records:  # レコードが存在する場合
                                 # カラム名を取得
                                 columns = records[0].keys()
-                                placeholders = ','.join(['?' for _ in columns])
+                                placeholders = ','.join(['%s' for _ in columns])
                                 columns_str = ','.join(columns)
-                                
+
                                 # データを挿入
                                 for record in records:
                                     values = [record[col] for col in columns]
                                     c.execute(
-                                        f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders})",
+                                        f"INSERT INTO {table_name} ({columns_str}) VALUES ({placeholders});",
                                         values
                                     )
 
                         # 統計情報の更新
-                        c.execute("ANALYZE;")
+                        c.execute("ANALYZE TABLE stock_master;")
+                        c.execute("ANALYZE TABLE survey;")
+                        c.execute("ANALYZE TABLE vote;")
 
                         # コミット
                         conn.commit()
@@ -138,20 +143,15 @@ def show_maintenance_db():
     # データベース整理の実行
     def run_maintenance_db():
         conn = get_connection()
-        c = conn.cursor()
+        c = conn.cursor(buffered=True)
 
         try:
-            # WALチェックポイントを実行する関数
-            c.execute("PRAGMA wal_checkpoint(FULL);")
-
             # 統計情報の更新
-            c.execute("ANALYZE;")
-
-            # DBファイルのサイズ最適化
-            c.execute("VACUUM;")
+            c.execute("ANALYZE TABLE stock_master;")
+            c.execute("ANALYZE TABLE survey;")
+            c.execute("ANALYZE TABLE vote;")
 
         except Exception as e:
-            # PRAGMA wal_checkpointはトランザクション外のコマンドのためRollBack不可
             st.error(f"データベース整理に失敗しました: {str(e)}") 
 
         finally:

@@ -157,9 +157,9 @@ def show_bulk_import():
 
 def update_stock_name(stock_code, new_name):
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     c.execute(
-        "UPDATE stock_master SET stock_name = ? WHERE stock_code = ?",
+        "UPDATE stock_master SET stock_name = %s WHERE stock_code = %s",
         (new_name, stock_code)
     )
     conn.commit()
@@ -168,20 +168,16 @@ def update_stock_name(stock_code, new_name):
 
 def save_new_stock(stock_code, stock_name):
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     try:
         c.execute(
             """
             INSERT INTO stock_master (stock_code, stock_name)
-            VALUES (?, ?)
-            ON CONFLICT(stock_code) DO UPDATE SET
-                stock_name = excluded.stock_name
+            VALUES (%s, %s)
+            ON DUPLICATE KEY UPDATE stock_name = VALUES(stock_name)
             """,
             (stock_code, stock_name)
         )
-
-        # 統計情報の更新 (適宜)
-        c.execute("PRAGMA optimize;")
 
         conn.commit()
         st.success(f"銘柄コード {stock_code} を登録/更新しました。")
@@ -192,7 +188,7 @@ def save_new_stock(stock_code, stock_name):
 
 def save_bulk_stocks(df):
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     
     success_count = 0
     update_count = 0
@@ -201,19 +197,17 @@ def save_bulk_stocks(df):
     for _, row in df.iterrows():
         try:
             # 既存のレコードをチェック
-            c.execute("SELECT stock_code FROM stock_master WHERE stock_code = ?", (row['銘柄コード'],))
+            c.execute("SELECT stock_code FROM stock_master WHERE stock_code = %s", (row['銘柄コード'],))
             exists = c.fetchone() is not None
-            
             c.execute(
                 """
                 INSERT INTO stock_master (stock_code, stock_name)
-                VALUES (?, ?)
-                ON CONFLICT(stock_code) DO UPDATE SET
-                    stock_name = excluded.stock_name
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE stock_name = VALUES(stock_name)
                 """,
                 (row['銘柄コード'], row['銘柄名'])
             )
-            
+
             if exists:
                 update_count += 1
             else:
@@ -224,7 +218,7 @@ def save_bulk_stocks(df):
             st.error(f"銘柄コード {row['銘柄コード']} の登録に失敗しました: {str(e)}")
 
     # 統計情報の更新
-    c.execute("ANALYZE stock_master;")
+    c.execute("ANALYZE TABLE stock_master;")
 
     conn.commit()
     conn.close()

@@ -15,13 +15,13 @@ def show(selected_date):
     
     # surveyテーブルから対象日の各銘柄のアンケート票数を集計
     conn = get_connection()
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     c.execute(
         """
         SELECT s.stock_code, COUNT(*) as survey_count, m.stock_name
         FROM survey s
         LEFT JOIN stock_master m ON s.stock_code = m.stock_code
-        WHERE s.survey_date = ?
+        WHERE s.survey_date = %s
         GROUP BY s.stock_code
         """,
         (selected_date_str,)
@@ -183,20 +183,17 @@ def save_vote_data(selected_date_str, results):
         progress_bar = st.progress(0)
         
         conn = get_connection()
-        c = conn.cursor()
+        c = conn.cursor(buffered=True)
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         for i, code in enumerate(selected_codes):
             c.execute(
-                "INSERT INTO vote (vote_date, stock_code, created_at) VALUES (?, ?, ?)",
+                "INSERT INTO vote (vote_date, stock_code, created_at) VALUES (%s, %s, %s)",
                 (selected_date_str, code, now)
             )
             # 進捗バーを更新
             progress = (i + 1) / len(selected_codes)
             progress_bar.progress(progress)
-
-        # 統計情報の更新 (適宜)
-        c.execute("PRAGMA optimize;")
 
         conn.commit()
         conn.close()

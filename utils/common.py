@@ -94,8 +94,8 @@ def get_stock_name(stock_code):
     """
     # データベースから銘柄名を取得
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT stock_name FROM stock_master WHERE stock_code = ?", (stock_code,))
+    cursor = conn.cursor(buffered=True)
+    cursor.execute("SELECT stock_name FROM stock_master WHERE stock_code = %s", (stock_code,))
     result = cursor.fetchone()
     
     if result:
@@ -110,7 +110,7 @@ def get_stock_name(stock_code):
             stock_name = info['shortName']
             # stock_masterテーブルに登録
             cursor.execute(
-                "INSERT INTO stock_master (stock_code, stock_name) VALUES (?, ?)",
+                "INSERT INTO stock_master (stock_code, stock_name) VALUES (%s, %s)",
                 (stock_code, stock_name)
             )
             conn.commit()

@@ -14,25 +14,18 @@ def show(selected_date):
     st.title("投票結果の推移")
     st.write(f"【投票日】{selected_date_str}")
 
-    # REGEXPを使うための関数を定義
-    def regexp(pattern, string):
-        return bool(re.match(pattern, string))
-
     sql_template = """
-        SELECT a.vote_date, a.stock_code || ' ' || COALESCE(b.stock_name, ''), count(a.stock_code) AS vote_count
-         FROM vote AS a LEFT OUTER JOIN stock_master AS b ON a.stock_code = b.stock_code WHERE a.vote_date BETWEEN ? AND ? 
-         AND a.stock_code REGEXP ?
+        SELECT a.vote_date, CONCAT(a.stock_code, ' ', COALESCE(b.stock_name, '')) AS stock_info, count(a.stock_code) AS vote_count
+         FROM vote AS a LEFT OUTER JOIN stock_master AS b ON a.stock_code = b.stock_code WHERE a.vote_date BETWEEN %s AND %s 
+         AND a.stock_code REGEXP %s
          GROUP BY a.vote_date, a.stock_code;
     """
 
     # voteテーブルから、各投票回の投票数を取得する
     conn = get_connection()
 
-    # REGEXP関数をSQLiteに登録
-    conn.create_function('REGEXP', 2, regexp)
-
     # 日本株 (数字始まり)
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     c.execute(
         sql_template,
         ((selected_date - datetime.timedelta(days=MAX_DAYS)).strftime("%Y-%m-%d"),
@@ -43,7 +36,7 @@ def show(selected_date):
     results_jp = c.fetchall()
 
     # 米国株 (英字始まり)
-    c = conn.cursor()
+    c = conn.cursor(buffered=True)
     c.execute(
         sql_template,
         ((selected_date - datetime.timedelta(days=MAX_DAYS)).strftime("%Y-%m-%d"),
