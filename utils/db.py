@@ -1,24 +1,26 @@
-import sqlite3
+import mysql.connector
 import os
-from datetime import datetime
 import streamlit as st
+from datetime import datetime
+from dotenv import load_dotenv
 
-def get_db_path():
-    """データベースファイルのパスを取得"""
-    # Azure App Serviceの永続的なストレージパス
-    if os.environ.get('WEBSITE_INSTANCE_ID'):
-        # Azureの場合は/home配下を使用
-        db_dir = '/home/data'
-        os.makedirs(db_dir, exist_ok=True)
-        return os.path.join(db_dir, 'survey.db')
-    else:
-        # ローカル開発環境
-        return 'survey.db'
+class DBConfig:
+    # 環境変数読み込み
+    load_dotenv()
+    DB_HOST = os.environ.get("DB_HOST", "127.0.0.1")
+    DB_USER = os.environ.get("DB_USER", "mysqluser")
+    DB_PASSWORD = os.environ.get("DB_PASSWORD", "password")
+    DB_NAME = os.environ.get("DB_NAME", "survey")
 
 def get_connection():
-    # SQLite の DB ファイル (survey.db) に接続（マルチスレッド対応のため check_same_thread=False）
-    db_path = get_db_path()
-    return sqlite3.connect(db_path, check_same_thread=False)
+    conn = mysql.connector.connect(
+        host=DBConfig.DB_HOST,
+        user=DBConfig.DB_USER,
+        password=DBConfig.DB_PASSWORD,
+        database=DBConfig.DB_NAME,
+        connect_timeout=30
+    )
+    return conn
 
 @st.cache_resource(ttl=24*3600)  # 24時間（1日）でキャッシュを無効化
 def init_db():
@@ -27,43 +29,52 @@ def init_db():
     @st.cache_resourceデコレータにより、1日1回のみ実行される。
     """
     conn = get_connection()
-    c = conn.cursor()
-
-    # DB高速化
-    c.execute("PRAGMA journal_mode=WAL;")
-    c.execute("PRAGMA synchronous=NORMAL;")
+    # Unread result found → 「前のクエリの結果をちゃんと読んでないよ」という警告 をなくすため自動読込みの有効化
+    c = conn.cursor(buffered=True)
 
     # 銘柄発掘アンケートの回答保存テーブル
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS survey (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTO_INCREMENT,
             survey_date TEXT NOT NULL,
-            stock_code TEXT NOT NULL,
+            stock_code VARCHAR(30) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
-    c.execute("CREATE INDEX IF NOT EXISTS idx_survey_date_stock_code ON survey (survey_date, stock_code);")
+    c.execute(
+        """
+        SELECT COUNT(*) FROM information_schema.statistics
+         WHERE table_schema = %s AND table_name = %s AND index_name = %s
+        """, (DBConfig.DB_NAME, 'survey', 'idx_survey_date_stock_code'))
+    if c.fetchone()[0] == 0:
+        c.execute("CREATE INDEX idx_survey_date_stock_code ON survey (survey_date(10), stock_code(30));")
 
     # 投票結果を保存するテーブル
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS vote (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id INTEGER PRIMARY KEY AUTO_INCREMENT,
             vote_date TEXT NOT NULL,
-            stock_code TEXT NOT NULL,
+            stock_code VARCHAR(30) NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
-    c.execute("CREATE INDEX IF NOT EXISTS idx_vote_date_stock_code ON vote (vote_date, stock_code);")
+    c.execute(
+        """
+        SELECT COUNT(*) FROM information_schema.statistics
+         WHERE table_schema = %s AND table_name = %s AND index_name = %s
+        """, (DBConfig.DB_NAME, 'vote', 'idx_vote_date_stock_code'))
+    if c.fetchone()[0] == 0:
+        c.execute("CREATE INDEX idx_vote_date_stock_code ON vote (vote_date(10), stock_code(30));")
 
     # 銘柄マスタテーブルを追加
     c.execute(
         """
         CREATE TABLE IF NOT EXISTS stock_master (
-            stock_code TEXT PRIMARY KEY,
+            stock_code VARCHAR(30) PRIMARY KEY,
             stock_name TEXT NOT NULL
         )
         """

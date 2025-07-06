@@ -191,7 +191,7 @@ def show(selected_date):
     
     # データベース接続
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(buffered=True)
     
     # 投票日の銘柄コード一覧を取得
     selected_date_str = selected_date.strftime("%Y-%m-%d")
@@ -199,7 +199,7 @@ def show(selected_date):
     cursor.execute("""
         SELECT DISTINCT stock_code, COUNT(*) as vote_count
         FROM vote
-        WHERE vote_date = ?
+        WHERE vote_date = %s
         GROUP BY stock_code
     """, (selected_date_str,))
     
