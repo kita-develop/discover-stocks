@@ -219,9 +219,17 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
     jpy_portfolio = {}
     usd_portfolio = {}
     jpy_cash = initial_jpy
-    usd_cash = initial_usd
-    
-    # 初期価値を記録
+
+    # 米国株の初期資金を円からドルに変換（開始日の為替レートを使用）
+    start_date_str = start_date.strftime("%Y-%m-%d")
+    initial_exchange_rate = get_exchange_rate(start_date_str)
+    if initial_exchange_rate is None or initial_exchange_rate <= 0:
+        st.error(f"開始日の為替レートが取得できませんでした: {start_date_str}")
+        return [], []
+
+    usd_cash = initial_usd / initial_exchange_rate  # 円→ドルに変換
+
+    # 初期価値を記録（円換算）
     initial_total_value = initial_jpy + initial_usd
     
     # 火曜日と土曜日の投票日を取得
@@ -260,55 +268,9 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                 # 現在のポートフォリオ価値を計算（円換算）
                 jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, current_jpy_prices, None)
                 usd_portfolio_value = calculate_portfolio_value(usd_portfolio, current_usd_prices, None, exchange_rate)
-                
-                # デバッグ: ポートフォリオ価値の詳細を表示
-                if jpy_portfolio_value > initial_total_value * 10:  # 初期投資額の10倍を超える場合
-                    st.error(f"日本株ポートフォリオ価値が異常です: ¥{jpy_portfolio_value:,.0f}")
-                    for stock_code, shares in jpy_portfolio.items():
-                        price = current_jpy_prices.get(stock_code, 0)
-                        value = shares * price
-                        st.write(f"- {stock_code}: {shares:.2f}株 × ¥{price:.2f} = ¥{value:,.0f}")
-                
-                if usd_portfolio_value > initial_total_value * 10:  # 初期投資額の10倍を超える場合
-                    st.error(f"米国株ポートフォリオ価値が異常です: ¥{usd_portfolio_value:,.0f}")
-                    for stock_code, shares in usd_portfolio.items():
-                        price = current_usd_prices.get(stock_code, 0)
-                        value = shares * price * (exchange_rate or 1)
-                        st.write(f"- {stock_code}: {shares:.2f}株 × ${price:.2f} × {exchange_rate:.2f} = ¥{value:,.0f}")
-                
+
                 # 総資産価値（すべて円換算）
-                total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + usd_cash
-                
-                # デバッグ情報を表示
-                if st.checkbox("詳細デバッグ情報を表示", key=f"debug_{current_date}"):
-                    st.write(f"**{current_date}のデバッグ情報:**")
-                    st.write(f"- 日本株ポートフォリオ価値: ¥{jpy_portfolio_value:,.0f}")
-                    st.write(f"- 米国株ポートフォリオ価値: ¥{usd_portfolio_value:,.0f}")
-                    st.write(f"- 日本株現金: ¥{jpy_cash:,.0f}")
-                    st.write(f"- 米国株現金: ¥{usd_cash:,.0f}")
-                    st.write(f"- 総価値: ¥{total_value:,.0f}")
-                    st.write(f"- 為替レート: {exchange_rate}")
-                    
-                    # ポートフォリオ詳細
-                    if jpy_portfolio:
-                        st.write("**日本株ポートフォリオ:**")
-                        for stock_code, shares in jpy_portfolio.items():
-                            price = current_jpy_prices.get(stock_code, 0)
-                            value = shares * price
-                            st.write(f"- {stock_code}: {shares:.2f}株 × ¥{price:.2f} = ¥{value:,.0f}")
-                    
-                    if usd_portfolio:
-                        st.write("**米国株ポートフォリオ:**")
-                        for stock_code, shares in usd_portfolio.items():
-                            price = current_usd_prices.get(stock_code, 0)
-                            value = shares * price * (exchange_rate or 1)
-                            st.write(f"- {stock_code}: {shares:.2f}株 × ${price:.2f} × {exchange_rate:.2f} = ¥{value:,.0f}")
-                
-                # デバッグ: 異常な価値をチェック
-                if total_value > initial_total_value * 100:  # 初期投資額の100倍を超える場合
-                    st.warning(f"異常な価値が検出されました: ¥{total_value:,.0f} (初期: ¥{initial_total_value:,.0f})")
-                    # 価値を初期投資額にリセット
-                    total_value = initial_total_value
+                total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
                 
                 # 既存のポートフォリオを売却（取引履歴に記録）
                 for stock_code, shares in jpy_portfolio.items():
@@ -360,21 +322,20 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                 # 最初の取引の場合は初期投資額を使用、それ以降は現在のポートフォリオ価値を使用
                 if not jpy_portfolio and not usd_portfolio:
                     # 最初の取引
-                    jpy_investment_value = initial_jpy
-                    usd_investment_value = initial_usd
-                    st.info(f"最初の取引: 日本株投資価値 = ¥{jpy_investment_value:,.0f}, 米国株投資価値 = ¥{usd_investment_value:,.0f}")
+                    jpy_investment_value = initial_jpy  # 円
+                    usd_investment_value_usd = usd_cash  # ドル
                 else:
                     # 既存のポートフォリオがある場合
                     # 異常な価値の場合は初期投資額を使用
                     if total_value > initial_total_value * 50:  # 初期投資額の50倍を超える場合は異常
-                        st.warning(f"異常なポートフォリオ価値を検出、初期投資額を使用: ¥{initial_total_value:,.0f}")
                         jpy_investment_value = initial_jpy
-                        usd_investment_value = initial_usd
+                        usd_investment_value_usd = initial_usd / initial_exchange_rate
                     else:
                         # 現在のポートフォリオ価値に基づいて日本株と米国株の資金を配分
-                        jpy_investment_value = jpy_portfolio_value + jpy_cash
-                        usd_investment_value = usd_portfolio_value + usd_cash
-                    st.info(f"既存ポートフォリオの再構築: 日本株投資価値 = ¥{jpy_investment_value:,.0f}, 米国株投資価値 = ¥{usd_investment_value:,.0f}")
+                        jpy_investment_value = jpy_portfolio_value + jpy_cash  # 円
+                        # 米国株の価値をドルで計算
+                        usd_portfolio_value_usd = calculate_portfolio_value(usd_portfolio, current_usd_prices, None)  # ドル建て
+                        usd_investment_value_usd = usd_portfolio_value_usd + usd_cash  # ドル
                 
                 # 取引コストを考慮した総資産価値
                 total_trading_cost = 0
@@ -388,10 +349,6 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                         
                         price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
                         if price is not None and price > 0:
-                            # 異常な株価をチェック
-                            if price > 100000:  # 10万円を超える株価は異常
-                                st.warning(f"異常な株価が検出されました: {stock_code} = ¥{price:,.0f}")
-                                continue
                             
                             # 取引コストを考慮
                             trading_cost = calculate_trading_cost(target_value)
@@ -422,33 +379,29 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                                     'sell_price': None
                                 })
                 
-                # 米国株の配分
-                usd_remaining_cash = usd_investment_value
+                # 米国株の配分（ドル建て）
+                usd_remaining_cash = usd_investment_value_usd  # ドル
                 for i, (stock_code, vote_count) in enumerate(usd_stocks):
                     if i < len(usd_allocation_ratios):
                         allocation_ratio = usd_allocation_ratios[i] / 100.0
-                        target_value = usd_investment_value * allocation_ratio
-                        
+                        target_value_usd = usd_investment_value_usd * allocation_ratio  # ドル
+
                         price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
                         if price is not None and price > 0:
-                            # 異常な株価をチェック（米国株は$1000を超える場合は異常）
-                            if price > 1000:
-                                st.warning(f"異常な株価が検出されました: {stock_code} = ${price:,.0f}")
-                                continue
-                            
-                            # 取引コストを考慮
-                            trading_cost = calculate_trading_cost(target_value)
-                            total_trading_cost += trading_cost
-                            
-                            # コストを差し引いた価値で株数を計算
-                            net_value = target_value - trading_cost
-                            shares = int(net_value / price)  # 1株未満は切捨て
-                            
+
+                            # 取引コストを考慮（ドル建て）
+                            trading_cost_usd = calculate_trading_cost(target_value_usd)
+                            total_trading_cost += trading_cost_usd * exchange_rate  # 円換算
+
+                            # コストを差し引いた価値で株数を計算（ドル建て）
+                            net_value_usd = target_value_usd - trading_cost_usd
+                            shares = int(net_value_usd / price)  # 1株未満は切捨て
+
                             if shares > 0:
-                                actual_cost = shares * price + trading_cost
-                                usd_remaining_cash -= actual_cost
+                                actual_cost_usd = shares * price + trading_cost_usd  # ドル
+                                usd_remaining_cash -= actual_cost_usd  # ドル
                                 new_usd_portfolio[stock_code] = shares
-                                
+
                                 # 取引履歴に記録（購入）
                                 trade_history.append({
                                     'date': trade_date,
@@ -458,7 +411,7 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                                     'action': '購入',
                                     'shares': shares,
                                     'price': price,
-                                    'value': shares * price,
+                                    'value': shares * price,  # ドル建て
                                     'currency': 'USD',
                                     'exchange_rate': exchange_rate,
                                     'buy_price': price,
@@ -468,13 +421,33 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                 # ポートフォリオを更新
                 jpy_portfolio = new_jpy_portfolio
                 usd_portfolio = new_usd_portfolio
-                
+
                 # 現金を更新（余った資金を保持）
-                jpy_cash = jpy_remaining_cash
-                usd_cash = usd_remaining_cash
-                
-                # 最終的な総資産価値を計算
-                final_total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + usd_cash
+                jpy_cash = jpy_remaining_cash  # 円
+                usd_cash = usd_remaining_cash  # ドル
+
+                # 新しいポートフォリオの価値を計算（購入直後の価格で）
+                new_jpy_prices = {}
+                new_usd_prices = {}
+
+                # 新しい日本株ポートフォリオの価格を取得
+                for stock_code in jpy_portfolio.keys():
+                    price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
+                    if price is not None:
+                        new_jpy_prices[stock_code] = price
+
+                # 新しい米国株ポートフォリオの価格を取得
+                for stock_code in usd_portfolio.keys():
+                    price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
+                    if price is not None:
+                        new_usd_prices[stock_code] = price
+
+                # 新しいポートフォリオの価値を計算（円換算）
+                new_jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, new_jpy_prices, None)
+                new_usd_portfolio_value = calculate_portfolio_value(usd_portfolio, new_usd_prices, None, exchange_rate)
+
+                # 最終的な総資産価値を計算（すべて円換算）
+                final_total_value = new_jpy_portfolio_value + jpy_cash + new_usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
                 
                 # 結果を記録
                 simulation_results.append({
@@ -482,13 +455,13 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
                     'vote_date': current_date,
                     'jpy_portfolio': jpy_portfolio.copy(),
                     'usd_portfolio': usd_portfolio.copy(),
-                    'jpy_cash': jpy_cash,
-                    'usd_cash': usd_cash,
-                    'total_value': final_total_value,
+                    'jpy_cash': jpy_cash,  # 円
+                    'usd_cash': usd_cash,  # ドル
+                    'total_value': final_total_value,  # 円換算の総資産
                     'exchange_rate': exchange_rate,
-                    'jpy_portfolio_value': jpy_portfolio_value,
-                    'usd_portfolio_value': usd_portfolio_value,
-                    'trading_cost': total_trading_cost
+                    'jpy_portfolio_value': new_jpy_portfolio_value,  # 円
+                    'usd_portfolio_value': new_usd_portfolio_value,  # 円換算
+                    'trading_cost': total_trading_cost  # 円換算
                 })
         
         current_date += timedelta(days=1)
@@ -541,16 +514,18 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
             if buy_trade:
                 pnl_per_share = trade['price'] - buy_trade['price']
                 pnl_amount = pnl_per_share * trade['shares']
-                
+                investment_amount = buy_trade['price'] * trade['shares']
+
                 # 円換算（米国株の場合）
                 if trade['currency'] == 'USD' and trade['exchange_rate']:
                     pnl_amount *= trade['exchange_rate']
-                
+                    investment_amount *= buy_trade['exchange_rate']  # 投資額も円換算
+
                 if trade_date not in daily_pnl:
                     daily_pnl[trade_date] = {'pnl': 0, 'investment': 0}
-                
+
                 daily_pnl[trade_date]['pnl'] += pnl_amount
-                daily_pnl[trade_date]['investment'] += buy_trade['price'] * trade['shares']
+                daily_pnl[trade_date]['investment'] += investment_amount
     
     # 日別の損益率を計算
     for trade_date, data in daily_pnl.items():
@@ -659,46 +634,75 @@ def calculate_risk_metrics(simulation_results):
         'total_trades': len(simulation_results)
     }
 
-def create_performance_chart(simulation_results):
+def create_performance_chart(simulation_results, initial_investment):
     """パフォーマンス推移チャートを作成"""
     if not simulation_results:
         return None
-    
+
+    # シミュレーション結果のデータを取得
     dates = [result['date'] for result in simulation_results]
     values = [result['total_value'] for result in simulation_results]
-    
-    # 初期値からの変化率を計算
-    initial_value = values[0] if values else 0
-    returns = [((value - initial_value) / initial_value) * 100 if initial_value > 0 else 0 for value in values]
-    
+
+    # 万単位に変換
+    values_in_man = [value / 10000 for value in values]
+    initial_investment_in_man = initial_investment / 10000
+
+    # 初期投資額からの変化率を計算
+    returns = [((value - initial_investment) / initial_investment) * 100 if initial_investment > 0 else 0 for value in values]
+
     fig = make_subplots(
         rows=2, cols=1,
         subplot_titles=('ポートフォリオ価値', '累積リターン(%)'),
         vertical_spacing=0.1
     )
-    
-    # ポートフォリオ価値のチャート
+
+    # ポートフォリオ価値のチャート（万単位）
     fig.add_trace(
-        go.Scatter(x=dates, y=values, mode='lines', name='ポートフォリオ価値', line=dict(color='blue')),
+        go.Scatter(x=dates, y=values_in_man, mode='lines', name='ポートフォリオ価値', line=dict(color='blue')),
         row=1, col=1
     )
-    
+
+    # 初期投資額の水平線を追加
+    fig.add_trace(
+        go.Scatter(
+            x=[dates[0], dates[-1]],
+            y=[initial_investment_in_man, initial_investment_in_man],
+            mode='lines',
+            name='初期投資額',
+            line=dict(color='red', dash='dash', width=2)
+        ),
+        row=1, col=1
+    )
+
     # 累積リターンのチャート
     fig.add_trace(
         go.Scatter(x=dates, y=returns, mode='lines', name='累積リターン(%)', line=dict(color='green')),
         row=2, col=1
     )
-    
+
+    # 0%の水平線を追加（リターンチャート用）
+    fig.add_trace(
+        go.Scatter(
+            x=[dates[0], dates[-1]],
+            y=[0, 0],
+            mode='lines',
+            name='0%ライン',
+            line=dict(color='gray', dash='dash', width=1),
+            showlegend=False
+        ),
+        row=2, col=1
+    )
+
     fig.update_layout(
         height=600,
         showlegend=True,
         title_text="投資シミュレーション結果"
     )
-    
+
     fig.update_xaxes(title_text="日付", row=2, col=1)
-    fig.update_yaxes(title_text="価値 (円)", row=1, col=1)
+    fig.update_yaxes(title_text="価値 (万円)", row=1, col=1)
     fig.update_yaxes(title_text="リターン (%)", row=2, col=1)
-    
+
     return fig
 
 def show(selected_date):
@@ -783,23 +787,10 @@ def show(selected_date):
                     st.session_state.simulation_results = simulation_results
                     st.session_state.trade_history = trade_history
                     st.success("シミュレーションが完了しました！")
-                    
-                    # デバッグ情報を表示
-                    if st.checkbox("デバッグ情報を表示"):
-                        st.write(f"シミュレーション結果数: {len(simulation_results)}")
-                        if simulation_results:
-                            first_value = simulation_results[0]['total_value']
-                            last_value = simulation_results[-1]['total_value']
-                            st.write(f"初期価値: ¥{first_value:,.0f}")
-                            st.write(f"最終価値: ¥{last_value:,.0f}")
-                            st.write(f"総リターン: {((last_value - first_value) / first_value) * 100:.2f}%")
                 else:
                     st.warning("シミュレーション対象のデータが見つかりませんでした。")
             except Exception as e:
                 st.error(f"シミュレーション実行中にエラーが発生しました: {str(e)}")
-                st.write("デバッグ情報:")
-                st.write(f"エラータイプ: {type(e).__name__}")
-                st.write(f"エラーメッセージ: {str(e)}")
     
     # 結果表示
     if 'simulation_results' in st.session_state and st.session_state.simulation_results:
@@ -840,7 +831,7 @@ def show(selected_date):
         
         # パフォーマンスチャート
         st.subheader("パフォーマンス推移")
-        fig = create_performance_chart(simulation_results)
+        fig = create_performance_chart(simulation_results, initial_value)
         if fig:
             st.plotly_chart(fig, use_container_width=True)
         
@@ -1023,6 +1014,8 @@ def show(selected_date):
                 'ポートフォリオ価値': f"¥{result['total_value']:,.0f}",
                 '日本株価値': f"¥{result['jpy_portfolio_value']:,.0f}",
                 '米国株価値': f"¥{result['usd_portfolio_value']:,.0f}",
+                '日本株現金': f"¥{result['jpy_cash']:,.0f}",
+                '米国株現金': f"${result['usd_cash']:,.2f}",
                 '為替レート': f"{result['exchange_rate']:.2f}" if result['exchange_rate'] else "N/A",
                 '取引コスト': f"¥{result['trading_cost']:,.0f}",
                 '日本株銘柄数': len(result['jpy_portfolio']),
