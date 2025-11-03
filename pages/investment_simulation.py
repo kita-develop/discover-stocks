@@ -1584,9 +1584,9 @@ def show(selected_date):
         
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("初期投資額", f"¥{initial_value:,}")
+            st.metric("初期投資額", f"¥{initial_value/10000:,.0f}万")
         with col2:
-            st.metric("最終価値", f"¥{final_value:,.0f}")
+            st.metric("最終価値", f"¥{final_value/10000:,.0f}万")
         with col3:
             st.metric("総リターン", f"{total_return:.2f}%")
         with col4:
