@@ -206,15 +206,15 @@ def calculate_portfolio_value(portfolio, current_prices, allocation_ratios, exch
     
     return total_value
 
-def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_ratios, usd_allocation_ratios):
+def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allocation_ratios, usd_allocation_ratios):
     """投資シミュレーションを実行"""
-    
+
     # シミュレーション結果を格納するリスト
     simulation_results = []
-    
+
     # 取引履歴を格納するリスト
     trade_history = []
-    
+
     # 初期ポートフォリオ
     jpy_portfolio = {}
     usd_portfolio = {}
@@ -231,10 +231,9 @@ def simulate_investment(start_date, initial_jpy, initial_usd, jpy_allocation_rat
 
     # 初期価値を記録（円換算）
     initial_total_value = initial_jpy + initial_usd
-    
+
     # 火曜日と土曜日の投票日を取得
     current_date = start_date
-    end_date = datetime.now().date()
     
     while current_date <= end_date:
         # 火曜日(1)または土曜日(5)の場合
@@ -719,14 +718,21 @@ def show(selected_date):
                 min_value=date(2020, 1, 1),
                 max_value=datetime.now().date()
             )
-            
+
+            end_date = st.date_input(
+                "終了日",
+                value=datetime.now().date(),
+                min_value=date(2020, 1, 1),
+                max_value=datetime.now().date()
+            )
+
             initial_jpy = st.number_input(
                 "日本株初期資金 (円)",
                 value=5000000,
                 min_value=0,
                 step=100000
             )
-        
+
         with col2:
             initial_usd = st.number_input(
                 "米国株初期資金 (円)",
@@ -773,24 +779,29 @@ def show(selected_date):
     
     # シミュレーション実行ボタン
     if st.button("シミュレーション実行", type="primary"):
-        with st.spinner("シミュレーションを実行中..."):
-            try:
-                simulation_results, trade_history = simulate_investment(
-                    start_date, 
-                    initial_jpy, 
-                    initial_usd, 
-                    jpy_allocation_ratios,
-                    usd_allocation_ratios
-                )
-                
-                if simulation_results:
-                    st.session_state.simulation_results = simulation_results
-                    st.session_state.trade_history = trade_history
-                    st.success("シミュレーションが完了しました！")
-                else:
-                    st.warning("シミュレーション対象のデータが見つかりませんでした。")
-            except Exception as e:
-                st.error(f"シミュレーション実行中にエラーが発生しました: {str(e)}")
+        # 日付の妥当性チェック
+        if start_date > end_date:
+            st.error("開始日は終了日より前である必要があります。")
+        else:
+            with st.spinner("シミュレーションを実行中..."):
+                try:
+                    simulation_results, trade_history = simulate_investment(
+                        start_date,
+                        end_date,
+                        initial_jpy,
+                        initial_usd,
+                        jpy_allocation_ratios,
+                        usd_allocation_ratios
+                    )
+
+                    if simulation_results:
+                        st.session_state.simulation_results = simulation_results
+                        st.session_state.trade_history = trade_history
+                        st.success("シミュレーションが完了しました！")
+                    else:
+                        st.warning("シミュレーション対象のデータが見つかりませんでした。")
+                except Exception as e:
+                    st.error(f"シミュレーション実行中にエラーが発生しました: {str(e)}")
     
     # 結果表示
     if 'simulation_results' in st.session_state and st.session_state.simulation_results:
