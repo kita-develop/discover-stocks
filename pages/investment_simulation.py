@@ -1470,42 +1470,49 @@ def show(selected_date):
 
     # 設定パネル
     with st.expander("シミュレーション設定", expanded=True):
-        col1, col2 = st.columns(2)
-        
-        with col1:
+        # 1行目: 開始日、終了日
+        col1_row1, col2_row1 = st.columns(2)
+        with col1_row1:
             start_date = st.date_input(
                 "開始日",
                 value=date(2025, 7, 1),
                 min_value=date(2020, 1, 1),
                 max_value=datetime.now().date()
             )
-
+        with col2_row1:
             end_date = st.date_input(
                 "終了日",
                 value=datetime.now().date(),
                 min_value=date(2020, 1, 1),
                 max_value=datetime.now().date()
             )
-
+        
+        # 2行目: 日本株初期資金、米国株初期資金
+        col1_row2, col2_row2 = st.columns(2)
+        with col1_row2:
             initial_jpy = st.number_input(
                 "日本株初期資金 (円)",
                 value=5000000,
                 min_value=0,
                 step=100000
             )
-
-        with col2:
+        with col2_row2:
             initial_usd = st.number_input(
                 "米国株初期資金 (円)",
                 value=5000000,
                 min_value=0,
                 step=100000
             )
-            
-            st.write("**日本株投資配分比率 (%)**")
-            jpy_allocation_ratios = []
-            for i in range(10):
-                ratio = st.number_input(
+        
+        # 3行目以降: 投資配分比率
+        st.write("**投資配分比率 (%)**")
+        jpy_allocation_ratios = []
+        usd_allocation_ratios = []
+        
+        for i in range(10):
+            col1, col2 = st.columns(2)
+            with col1:
+                jpy_ratio = st.number_input(
                     f"日本株第{i+1}位",
                     value=DEFAULT_ALLOCATION[i],
                     min_value=0,
@@ -1513,17 +1520,10 @@ def show(selected_date):
                     step=1,
                     key=f"jpy_allocation_{i}"
                 )
-                jpy_allocation_ratios.append(ratio)
+                jpy_allocation_ratios.append(jpy_ratio)
             
-            # 日本株配分の合計を表示
-            jpy_total_allocation = sum(jpy_allocation_ratios)
-            if jpy_total_allocation != 100:
-                st.warning(f"日本株配分の合計が100%ではありません（現在: {jpy_total_allocation}%）")
-            
-            st.write("**米国株投資配分比率 (%)**")
-            usd_allocation_ratios = []
-            for i in range(10):
-                ratio = st.number_input(
+            with col2:
+                usd_ratio = st.number_input(
                     f"米国株第{i+1}位",
                     value=DEFAULT_ALLOCATION[i],
                     min_value=0,
@@ -1531,12 +1531,16 @@ def show(selected_date):
                     step=1,
                     key=f"usd_allocation_{i}"
                 )
-                usd_allocation_ratios.append(ratio)
-            
-            # 米国株配分の合計を表示
-            usd_total_allocation = sum(usd_allocation_ratios)
-            if usd_total_allocation != 100:
-                st.warning(f"米国株配分の合計が100%ではありません（現在: {usd_total_allocation}%）")
+                usd_allocation_ratios.append(usd_ratio)
+        
+        # 配分の合計を表示
+        jpy_total_allocation = sum(jpy_allocation_ratios)
+        usd_total_allocation = sum(usd_allocation_ratios)
+        
+        if jpy_total_allocation != 100:
+            st.warning(f"日本株配分の合計が100%ではありません（現在: {jpy_total_allocation}%）")
+        if usd_total_allocation != 100:
+            st.warning(f"米国株配分の合計が100%ではありません（現在: {usd_total_allocation}%）")
     
     # シミュレーション実行ボタン
     if st.button("シミュレーション実行", type="primary"):
