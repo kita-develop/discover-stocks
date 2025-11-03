@@ -71,6 +71,23 @@ def init_db():
 
     conn.commit()
     conn.close()
-    
+
     # キャッシュの有効期限を確認するために実行時刻をログ出力
-    st.write(f"DBキャッシュ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}") 
+    st.write(f"DBキャッシュ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+def init_price_cache_table():
+    """株価キャッシュテーブルを初期化"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS price_cache (
+            stock_code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            price REAL NOT NULL,
+            currency TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (stock_code, date)
+        )
+    """)
+    conn.commit()
+    conn.close()

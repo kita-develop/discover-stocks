@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import calendar
-from utils.db import get_connection
+from utils.db import get_connection, init_price_cache_table
 from utils.common import get_stock_name, get_ticker
 from functools import lru_cache
 import json
@@ -22,22 +22,86 @@ TRADING_COSTS = {
     'spread_rate': 0.0002       # 0.02%のスプレッド
 }
 
+def get_price_from_cache(stock_code, date_str):
+    """
+    キャッシュから株価を取得
+
+    Parameters:
+    stock_code (str): 銘柄コード（為替の場合は'USDJPY=X'）
+    date_str (str): 日付（YYYY-MM-DD形式）
+
+    Returns:
+    float: 株価 または None
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT price FROM price_cache
+            WHERE stock_code = ? AND date = ?
+        """, (stock_code, date_str))
+
+        result = cursor.fetchone()
+        conn.close()
+
+        if result:
+            return float(result[0])
+        return None
+
+    except Exception as e:
+        return None
+
+def save_price_to_cache(stock_code, date_str, price, currency):
+    """
+    株価をキャッシュに保存
+
+    Parameters:
+    stock_code (str): 銘柄コード（為替の場合は'USDJPY=X'）
+    date_str (str): 日付（YYYY-MM-DD形式）
+    price (float): 株価
+    currency (str): 通貨（'JPY', 'USD', 'FX'）
+    """
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        updated_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+        # INSERT OR REPLACE を使用して更新
+        cursor.execute("""
+            INSERT OR REPLACE INTO price_cache
+            (stock_code, date, price, currency, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (stock_code, date_str, price, currency, updated_at))
+
+        conn.commit()
+        conn.close()
+
+    except Exception as e:
+        pass  # エラーが発生してもキャッシュ保存の失敗は無視
+
 @lru_cache(maxsize=1000)
 def get_exchange_rate(target_date):
     """
     指定日のUSD/JPY為替レートを取得する関数（キャッシュ付き）
-    
+
     Parameters:
     target_date (str): 対象日（YYYY-MM-DD形式）
-    
+
     Returns:
     float: USD/JPY為替レート または None
     """
+    # 1. DBキャッシュから取得を試みる
+    cached_rate = get_price_from_cache("USDJPY=X", target_date)
+    if cached_rate is not None:
+        return cached_rate
+
+    # 2. キャッシュにない場合はyfinanceから取得
     try:
         # 前後3日間のデータを取得して、指定日に最も近い営業日の為替レートを取得
         start_date = (pd.Timestamp(target_date) - pd.Timedelta(days=3)).strftime("%Y-%m-%d")
         end_date = (pd.Timestamp(target_date) + pd.Timedelta(days=3)).strftime("%Y-%m-%d")
-        
+
         df = yf.download(
             "USDJPY=X",
             start=start_date,
@@ -46,22 +110,27 @@ def get_exchange_rate(target_date):
             threads=False,
             auto_adjust=True
         )
-        
+
         if df.empty:
             return None
-            
+
         # 指定日に最も近い営業日の終値を取得
         target_timestamp = pd.Timestamp(target_date)
         available_dates = df.index
-        
+
         # 指定日以前の最新の営業日を探す
         valid_dates = available_dates[available_dates <= target_timestamp]
         if len(valid_dates) > 0:
             closest_date = valid_dates[-1]
-            return float(df.loc[closest_date]["Close"].iloc[0])
-        
+            rate = float(df.loc[closest_date]["Close"].iloc[0])
+
+            # 3. 取得した値をDBキャッシュに保存
+            save_price_to_cache("USDJPY=X", target_date, rate, "FX")
+
+            return rate
+
         return None
-        
+
     except Exception as e:
         return None
 
@@ -69,21 +138,27 @@ def get_exchange_rate(target_date):
 def get_stock_price_cached(stock_code, target_date):
     """
     指定日の株価を取得する関数（キャッシュ付き）
-    
+
     Parameters:
     stock_code (str): 銘柄コード
     target_date (str): 対象日（YYYY-MM-DD形式）
-    
+
     Returns:
     float: 終値 または None
     """
+    # 1. DBキャッシュから取得を試みる
+    cached_price = get_price_from_cache(stock_code, target_date)
+    if cached_price is not None:
+        return cached_price
+
+    # 2. キャッシュにない場合はyfinanceから取得
     try:
         ticker = get_ticker(stock_code)
-        
+
         # 前後3日間のデータを取得して、指定日に最も近い営業日の株価を取得
         start_date = (pd.Timestamp(target_date) - pd.Timedelta(days=3)).strftime("%Y-%m-%d")
         end_date = (pd.Timestamp(target_date) + pd.Timedelta(days=3)).strftime("%Y-%m-%d")
-        
+
         df = yf.download(
             ticker,
             start=start_date,
@@ -92,28 +167,33 @@ def get_stock_price_cached(stock_code, target_date):
             threads=False,
             auto_adjust=True
         )
-        
+
         if df.empty:
             return None
-            
+
         # 指定日に最も近い営業日の終値を取得
         target_timestamp = pd.Timestamp(target_date)
         available_dates = df.index
-        
+
         # 指定日以前の最新の営業日を探す
         valid_dates = available_dates[available_dates <= target_timestamp]
         if len(valid_dates) > 0:
             closest_date = valid_dates[-1]
             price = float(df.loc[closest_date]["Close"].iloc[0])
-            
+
             # 異常に大きな価格をチェック（例：1株あたり100万円を超える場合は無効）
             if price > 1000000 or price <= 0:
                 return None
-                
+
+            # 3. 取得した値をDBキャッシュに保存
+            # 通貨を判定（日本株かどうか）
+            currency = 'JPY' if stock_code[0].isdigit() else 'USD'
+            save_price_to_cache(stock_code, target_date, price, currency)
+
             return price
-        
+
         return None
-        
+
     except Exception as e:
         return None
 
@@ -234,24 +314,40 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
 
     # 火曜日と土曜日の投票日を取得
     current_date = start_date
-    
+    previous_total_value = initial_total_value  # 前日の総資産価値を記録
+
     while current_date <= end_date:
-        # 火曜日(1)または土曜日(5)の場合
-        if current_date.weekday() in [1, 5]:
-            vote_date_str = current_date.strftime("%Y-%m-%d")
+        # 土日をスキップ（市場が開いていない日）
+        if current_date.weekday() >= 5:
+            current_date += timedelta(days=1)
+            continue
+
+        # 為替レートを取得（毎日必要）
+        exchange_rate = get_exchange_rate(current_date.strftime("%Y-%m-%d"))
+        if exchange_rate is None or exchange_rate <= 0:
+            current_date += timedelta(days=1)
+            continue
+
+        # 取引処理: 前日が火曜日(1)または土曜日(5)の投票日だった場合、今日が取引日
+        yesterday = current_date - timedelta(days=1)
+        # 土日をスキップして実際の前営業日を見つける
+        while yesterday.weekday() >= 5:
+            yesterday -= timedelta(days=1)
+
+        is_trade_day = yesterday.weekday() in [1, 5]
+
+        if is_trade_day:
+            vote_date_str = yesterday.strftime("%Y-%m-%d")
             jpy_stocks, usd_stocks = get_vote_results_for_date_separated(vote_date_str)
-            
+
             if jpy_stocks or usd_stocks:
-                # 次の営業日に売買を実行
-                trade_date = get_next_business_day(current_date)
-                
+                # 今日が取引日
+                trade_date = current_date
+
                 # 現在のポートフォリオ価値を計算
                 current_jpy_prices = {}
                 current_usd_prices = {}
-                
-                # 為替レートを取得
-                exchange_rate = get_exchange_rate(trade_date.strftime("%Y-%m-%d"))
-                
+
                 # 日本株の現在価格を取得
                 for stock_code in jpy_portfolio.keys():
                     price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
@@ -270,116 +366,401 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
 
                 # 総資産価値（すべて円換算）
                 total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
+
+                # 取引コストを考慮した総資産価値
+                total_trading_cost = 0
+
+                # --- 日本株の差分調整 ---
+                # 日本株の差分売買を実行
+                jpy_cash_from_sales = 0
+                jpy_cash_for_purchases = 0
+
+                # まず、売却が必要な銘柄を特定
+                stocks_to_sell = {}
+                for stock_code, current_shares in jpy_portfolio.items():
+                    # 目標ポートフォリオにはまだ計算していないので、一旦全売却候補として記録
+                    # 実際の売却判断は、投票結果を確認後に行う
+                    stocks_to_sell[stock_code] = current_shares
+
+                # 1. 売却が必要な銘柄を処理（投票結果に含まれない銘柄を全売却）
+                temp_jpy_portfolio = jpy_portfolio.copy()
+                for stock_code, current_shares in jpy_portfolio.items():
+                    # 投票結果にこの銘柄が含まれているか確認
+                    in_vote_results = any(sc == stock_code for sc, _ in jpy_stocks)
+                    
+                    if not in_vote_results:
+                        # 投票結果に含まれていない銘柄は全売却
+                        if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
+                            sell_price = current_jpy_prices[stock_code]
+                            sell_value = current_shares * sell_price
+                            sell_cost = calculate_trading_cost(sell_value)
+
+                            # 売却による現金増加（手数料を差し引く）
+                            jpy_cash_from_sales += sell_value - sell_cost
+                            total_trading_cost += sell_cost
+
+                            # 取引履歴に記録
+                            trade_history.append({
+                                'date': trade_date,
+                                'vote_date': yesterday,
+                                'stock_code': stock_code,
+                                'stock_name': get_stock_name(stock_code),
+                                'action': '売却',
+                                'shares': current_shares,
+                                'price': sell_price,
+                                'value': sell_value,
+                                'currency': 'JPY',
+                                'exchange_rate': None
+                            })
+
+                            # 一時ポートフォリオから削除
+                            del temp_jpy_portfolio[stock_code]
+
+                # 現金を更新（売却による現金増加を追加）
+                jpy_cash += jpy_cash_from_sales
+
+                # 2. 保有銘柄の調整を事前に計算（減額が必要な場合の売却額を把握）
+                # まず、現在のポートフォリオ価値と現金から投資額を計算（暫定）
+                temp_jpy_portfolio_value = calculate_portfolio_value(temp_jpy_portfolio, current_jpy_prices, None)
                 
-                # 既存のポートフォリオを売却（取引履歴に記録）
-                for stock_code, shares in jpy_portfolio.items():
-                    if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
-                        sell_price = current_jpy_prices[stock_code]
-                        sell_value = shares * sell_price
-                        
-                        # 取引履歴に記録
-                        trade_history.append({
-                            'date': trade_date,
-                            'vote_date': current_date,
-                            'stock_code': stock_code,
-                            'stock_name': get_stock_name(stock_code),
-                            'action': '売却',
-                            'shares': shares,
-                            'price': sell_price,
-                            'value': sell_value,
-                            'currency': 'JPY',
-                            'exchange_rate': None
-                        })
+                if not temp_jpy_portfolio and not usd_portfolio:
+                    # 最初の取引
+                    temp_jpy_investment_value = initial_jpy  # 円
+                else:
+                    temp_total_value = temp_jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
+                    
+                    # 異常な価値の場合は初期投資額を使用
+                    if temp_total_value > initial_total_value * 50:
+                        temp_jpy_investment_value = initial_jpy
+                    else:
+                        temp_jpy_investment_value = temp_jpy_portfolio_value + jpy_cash  # 円
+
+                # 暫定の目標ポートフォリオを計算
+                temp_target_jpy_portfolio = {}
+                for i, (stock_code, vote_count) in enumerate(jpy_stocks):
+                    if i < len(jpy_allocation_ratios):
+                        allocation_ratio = jpy_allocation_ratios[i] / 100.0
+                        target_value = temp_jpy_investment_value * allocation_ratio
+
+                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
+                        if price is not None and price > 0:
+                            trading_cost = calculate_trading_cost(target_value)
+                            net_value = target_value - trading_cost
+                            target_shares = int(net_value / price)
+
+                            if target_shares > 0:
+                                temp_target_jpy_portfolio[stock_code] = target_shares
+
+                # 減額売却が必要な場合の追加売却額を計算
+                additional_cash_from_sales = 0
+                for stock_code, current_shares in temp_jpy_portfolio.items():
+                    target_shares = temp_target_jpy_portfolio.get(stock_code, 0)
+
+                    if target_shares < current_shares:
+                        shares_to_sell = current_shares - target_shares
+
+                        if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
+                            sell_price = current_jpy_prices[stock_code]
+                            sell_value = shares_to_sell * sell_price
+                            sell_cost = calculate_trading_cost(sell_value)
+                            additional_cash_from_sales += sell_value - sell_cost
+
+                # すべての売却後の最終投資額を計算
+                final_jpy_cash = jpy_cash + additional_cash_from_sales
                 
-                for stock_code, shares in usd_portfolio.items():
-                    if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
-                        sell_price = current_usd_prices[stock_code]
-                        sell_value = shares * sell_price
-                        
-                        # 取引履歴に記録
-                        trade_history.append({
-                            'date': trade_date,
-                            'vote_date': current_date,
-                            'stock_code': stock_code,
-                            'stock_name': get_stock_name(stock_code),
-                            'action': '売却',
-                            'shares': shares,
-                            'price': sell_price,
-                            'value': sell_value,
-                            'currency': 'USD',
-                            'exchange_rate': exchange_rate
-                        })
-                
-                # 新しいポートフォリオを構築
-                new_jpy_portfolio = {}
-                new_usd_portfolio = {}
-                
-                # 日本株と米国株は既に分けられている
-                # jpy_stocks, usd_stocks は既に取得済み
-                
-                # 投資対象の総資産価値を決定
-                # 最初の取引の場合は初期投資額を使用、それ以降は現在のポートフォリオ価値を使用
-                if not jpy_portfolio and not usd_portfolio:
+                # 投資対象の総資産価値を決定（すべての売却後の価値を使用）
+                if not temp_jpy_portfolio and not usd_portfolio:
                     # 最初の取引
                     jpy_investment_value = initial_jpy  # 円
                     usd_investment_value_usd = usd_cash  # ドル
                 else:
-                    # 既存のポートフォリオがある場合
+                    # 減額売却後のポートフォリオ価値を計算
+                    final_jpy_portfolio_value = temp_jpy_portfolio_value
+                    # 減額売却される株の価値を差し引く
+                    for stock_code, current_shares in temp_jpy_portfolio.items():
+                        target_shares = temp_target_jpy_portfolio.get(stock_code, 0)
+                        if target_shares < current_shares:
+                            shares_to_sell = current_shares - target_shares
+                            if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
+                                final_jpy_portfolio_value -= shares_to_sell * current_jpy_prices[stock_code]
+                    
+                    # 総資産価値を再計算（すべての売却後の価値）
+                    final_total_value = final_jpy_portfolio_value + final_jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
+                    
                     # 異常な価値の場合は初期投資額を使用
-                    if total_value > initial_total_value * 50:  # 初期投資額の50倍を超える場合は異常
+                    if final_total_value > initial_total_value * 50:
                         jpy_investment_value = initial_jpy
                         usd_investment_value_usd = initial_usd / initial_exchange_rate
                     else:
-                        # 現在のポートフォリオ価値に基づいて日本株と米国株の資金を配分
-                        jpy_investment_value = jpy_portfolio_value + jpy_cash  # 円
+                        # すべての売却後のポートフォリオ価値に基づいて日本株と米国株の資金を配分
+                        jpy_investment_value = final_jpy_portfolio_value + final_jpy_cash  # 円
                         # 米国株の価値をドルで計算
                         usd_portfolio_value_usd = calculate_portfolio_value(usd_portfolio, current_usd_prices, None)  # ドル建て
                         usd_investment_value_usd = usd_portfolio_value_usd + usd_cash  # ドル
-                
-                # 取引コストを考慮した総資産価値
-                total_trading_cost = 0
-                
-                # 日本株の配分
-                jpy_remaining_cash = jpy_investment_value
+
+                # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
+                target_jpy_portfolio = {}
                 for i, (stock_code, vote_count) in enumerate(jpy_stocks):
                     if i < len(jpy_allocation_ratios):
                         allocation_ratio = jpy_allocation_ratios[i] / 100.0
                         target_value = jpy_investment_value * allocation_ratio
-                        
+
                         price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
                         if price is not None and price > 0:
-                            
-                            # 取引コストを考慮
+                            # 取引コストを考慮して目標株数を計算
                             trading_cost = calculate_trading_cost(target_value)
-                            total_trading_cost += trading_cost
-                            
-                            # コストを差し引いた価値で株数を計算
                             net_value = target_value - trading_cost
-                            shares = int(net_value / price)  # 1株未満は切捨て
-                            
-                            if shares > 0:
-                                actual_cost = shares * price + trading_cost
-                                jpy_remaining_cash -= actual_cost
-                                new_jpy_portfolio[stock_code] = shares
-                                
-                                # 取引履歴に記録（購入）
+                            target_shares = int(net_value / price)  # 1株未満は切捨て
+
+                            if target_shares > 0:
+                                target_jpy_portfolio[stock_code] = target_shares
+
+                # 3. 保有銘柄の調整（減額が必要な場合の売却）を実行
+                for stock_code, current_shares in temp_jpy_portfolio.items():
+                    target_shares = target_jpy_portfolio.get(stock_code, 0)
+
+                    if target_shares < current_shares:
+                        # 売却が必要
+                        shares_to_sell = current_shares - target_shares
+
+                        if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
+                            sell_price = current_jpy_prices[stock_code]
+                            sell_value = shares_to_sell * sell_price
+                            sell_cost = calculate_trading_cost(sell_value)
+
+                            # 取引コストを記録
+                            total_trading_cost += sell_cost
+
+                            # 取引履歴に記録
+                            trade_history.append({
+                                'date': trade_date,
+                                'vote_date': yesterday,
+                                'stock_code': stock_code,
+                                'stock_name': get_stock_name(stock_code),
+                                'action': '売却',
+                                'shares': shares_to_sell,
+                                'price': sell_price,
+                                'value': sell_value,
+                                'currency': 'JPY',
+                                'exchange_rate': None
+                            })
+
+                            # 一時ポートフォリオを更新
+                            temp_jpy_portfolio[stock_code] = target_shares
+
+                # 追加売却による現金を更新
+                jpy_cash += additional_cash_from_sales
+
+                # 4. 購入が必要な銘柄を処理
+                for stock_code, target_shares in target_jpy_portfolio.items():
+                    current_shares = temp_jpy_portfolio.get(stock_code, 0)
+
+                    if target_shares > current_shares:
+                        # 購入が必要
+                        shares_to_buy = target_shares - current_shares
+
+                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
+                        if price is not None and price > 0:
+                            buy_value = shares_to_buy * price
+                            buy_cost = calculate_trading_cost(buy_value)
+                            total_cost = buy_value + buy_cost
+
+                            # 現金が足りる場合のみ購入
+                            if total_cost <= jpy_cash:
+                                jpy_cash -= total_cost
+                                jpy_cash_for_purchases += total_cost
+                                total_trading_cost += buy_cost
+
+                                # 取引履歴に記録
                                 trade_history.append({
                                     'date': trade_date,
-                                    'vote_date': current_date,
+                                    'vote_date': yesterday,
                                     'stock_code': stock_code,
                                     'stock_name': get_stock_name(stock_code),
                                     'action': '購入',
-                                    'shares': shares,
+                                    'shares': shares_to_buy,
                                     'price': price,
-                                    'value': shares * price,
+                                    'value': buy_value,
                                     'currency': 'JPY',
                                     'exchange_rate': None,
                                     'buy_price': price,
                                     'sell_price': None
                                 })
+
+                                # 一時ポートフォリオを更新
+                                temp_jpy_portfolio[stock_code] = target_shares
+                            else:
+                                # 現金が足りない場合は、購入できる分だけ購入
+                                available_shares = int((jpy_cash * 0.99) / (price * (1 + TRADING_COSTS['commission_rate'] + TRADING_COSTS['slippage_rate'] + TRADING_COSTS['spread_rate'])))
+                                if available_shares > 0:
+                                    shares_to_buy = available_shares
+                                    buy_value = shares_to_buy * price
+                                    buy_cost = calculate_trading_cost(buy_value)
+                                    total_cost = buy_value + buy_cost
+
+                                    if total_cost <= jpy_cash:
+                                        jpy_cash -= total_cost
+                                        jpy_cash_for_purchases += total_cost
+                                        total_trading_cost += buy_cost
+
+                                        # 取引履歴に記録
+                                        trade_history.append({
+                                            'date': trade_date,
+                                            'vote_date': yesterday,
+                                            'stock_code': stock_code,
+                                            'stock_name': get_stock_name(stock_code),
+                                            'action': '購入',
+                                            'shares': shares_to_buy,
+                                            'price': price,
+                                            'value': buy_value,
+                                            'currency': 'JPY',
+                                            'exchange_rate': None,
+                                            'buy_price': price,
+                                            'sell_price': None
+                                        })
+
+                                        # 一時ポートフォリオを更新
+                                        temp_jpy_portfolio[stock_code] = current_shares + shares_to_buy
+
+                # 日本株ポートフォリオを更新
+                jpy_portfolio = temp_jpy_portfolio.copy()
+
+                # --- 米国株の差分調整 ---
+                # 米国株の差分売買を実行
+                usd_cash_from_sales = 0
+                usd_cash_for_purchases = 0
+
+                # 1. 売却が必要な銘柄を処理（投票結果に含まれない銘柄を全売却）
+                temp_usd_portfolio = usd_portfolio.copy()
+                for stock_code, current_shares in usd_portfolio.items():
+                    # 投票結果にこの銘柄が含まれているか確認
+                    in_vote_results = any(sc == stock_code for sc, _ in usd_stocks)
+                    
+                    if not in_vote_results:
+                        # 投票結果に含まれていない銘柄は全売却
+                        if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
+                            sell_price = current_usd_prices[stock_code]
+                            sell_value_usd = current_shares * sell_price
+                            sell_cost_usd = calculate_trading_cost(sell_value_usd)
+
+                            # 売却による現金増加（手数料を差し引く、ドル建て）
+                            usd_cash_from_sales += sell_value_usd - sell_cost_usd
+                            total_trading_cost += sell_cost_usd * exchange_rate  # 円換算
+
+                            # 取引履歴に記録
+                            trade_history.append({
+                                'date': trade_date,
+                                'vote_date': yesterday,
+                                'stock_code': stock_code,
+                                'stock_name': get_stock_name(stock_code),
+                                'action': '売却',
+                                'shares': current_shares,
+                                'price': sell_price,
+                                'value': sell_value_usd,
+                                'currency': 'USD',
+                                'exchange_rate': exchange_rate
+                            })
+
+                            # 一時ポートフォリオから削除
+                            del temp_usd_portfolio[stock_code]
+
+                # 現金を更新（売却による現金増加を追加、ドル建て）
+                usd_cash += usd_cash_from_sales
+
+                # 売却後のポートフォリオ価値を再計算（ドル建て）
+                temp_usd_portfolio_value_usd = calculate_portfolio_value(temp_usd_portfolio, current_usd_prices, None)  # ドル建て
+
+                # 投資対象の総資産価値を決定（売却後の価値を使用）
+                if not jpy_portfolio and not temp_usd_portfolio:
+                    # 最初の取引
+                    usd_investment_value_usd = usd_cash  # ドル
+                else:
+                    # 既存のポートフォリオがある場合
+                    # 総資産価値を再計算（売却後の価値）
+                    temp_total_value = jpy_portfolio_value + jpy_cash + (temp_usd_portfolio_value_usd * exchange_rate) + (usd_cash * exchange_rate if exchange_rate else 0)
+                    
+                    # 異常な価値の場合は初期投資額を使用
+                    if temp_total_value > initial_total_value * 50:
+                        usd_investment_value_usd = initial_usd / initial_exchange_rate
+                    else:
+                        # 売却後のポートフォリオ価値に基づいて米国株の資金を配分（ドル建て）
+                        usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
+
+                # 2. 保有銘柄の調整を事前に計算（減額が必要な場合の売却額を把握）
+                # まず、現在のポートフォリオ価値と現金から投資額を計算（暫定）
                 
-                # 米国株の配分（ドル建て）
-                usd_remaining_cash = usd_investment_value_usd  # ドル
+                if not jpy_portfolio and not temp_usd_portfolio:
+                    # 最初の取引
+                    temp_usd_investment_value_usd = initial_usd / initial_exchange_rate  # ドル
+                else:
+                    temp_total_value = jpy_portfolio_value + jpy_cash + (temp_usd_portfolio_value_usd * exchange_rate) + (usd_cash * exchange_rate if exchange_rate else 0)
+                    
+                    # 異常な価値の場合は初期投資額を使用
+                    if temp_total_value > initial_total_value * 50:
+                        temp_usd_investment_value_usd = initial_usd / initial_exchange_rate
+                    else:
+                        temp_usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
+
+                # 暫定の目標ポートフォリオを計算
+                temp_target_usd_portfolio = {}
+                for i, (stock_code, vote_count) in enumerate(usd_stocks):
+                    if i < len(usd_allocation_ratios):
+                        allocation_ratio = usd_allocation_ratios[i] / 100.0
+                        target_value_usd = temp_usd_investment_value_usd * allocation_ratio  # ドル
+
+                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
+                        if price is not None and price > 0:
+                            trading_cost_usd = calculate_trading_cost(target_value_usd)
+                            net_value_usd = target_value_usd - trading_cost_usd
+                            target_shares = int(net_value_usd / price)  # 1株未満は切捨て
+
+                            if target_shares > 0:
+                                temp_target_usd_portfolio[stock_code] = target_shares
+
+                # 減額売却が必要な場合の追加売却額を計算
+                additional_usd_cash_from_sales = 0
+                for stock_code, current_shares in temp_usd_portfolio.items():
+                    target_shares = temp_target_usd_portfolio.get(stock_code, 0)
+
+                    if target_shares < current_shares:
+                        shares_to_sell = current_shares - target_shares
+
+                        if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
+                            sell_price = current_usd_prices[stock_code]
+                            sell_value_usd = shares_to_sell * sell_price
+                            sell_cost_usd = calculate_trading_cost(sell_value_usd)
+                            additional_usd_cash_from_sales += sell_value_usd - sell_cost_usd
+
+                # すべての売却後の最終投資額を計算
+                final_usd_cash = usd_cash + additional_usd_cash_from_sales
+                
+                # 投資対象の総資産価値を決定（すべての売却後の価値を使用）
+                if not jpy_portfolio and not temp_usd_portfolio:
+                    # 最初の取引
+                    usd_investment_value_usd = initial_usd / initial_exchange_rate  # ドル
+                else:
+                    # 減額売却後のポートフォリオ価値を計算（ドル建て）
+                    final_usd_portfolio_value_usd = temp_usd_portfolio_value_usd
+                    # 減額売却される株の価値を差し引く
+                    for stock_code, current_shares in temp_usd_portfolio.items():
+                        target_shares = temp_target_usd_portfolio.get(stock_code, 0)
+                        if target_shares < current_shares:
+                            shares_to_sell = current_shares - target_shares
+                            if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
+                                final_usd_portfolio_value_usd -= shares_to_sell * current_usd_prices[stock_code]
+                    
+                    # 総資産価値を再計算（すべての売却後の価値）
+                    final_total_value = jpy_portfolio_value + jpy_cash + (final_usd_portfolio_value_usd * exchange_rate) + (final_usd_cash * exchange_rate if exchange_rate else 0)
+                    
+                    # 異常な価値の場合は初期投資額を使用
+                    if final_total_value > initial_total_value * 50:
+                        usd_investment_value_usd = initial_usd / initial_exchange_rate
+                    else:
+                        # すべての売却後のポートフォリオ価値に基づいて米国株の資金を配分（ドル建て）
+                        usd_investment_value_usd = final_usd_portfolio_value_usd + final_usd_cash  # ドル
+
+                # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
+                target_usd_portfolio = {}
                 for i, (stock_code, vote_count) in enumerate(usd_stocks):
                     if i < len(usd_allocation_ratios):
                         allocation_ratio = usd_allocation_ratios[i] / 100.0
@@ -387,188 +768,565 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
 
                         price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
                         if price is not None and price > 0:
-
-                            # 取引コストを考慮（ドル建て）
+                            # 取引コストを考慮して目標株数を計算（ドル建て）
                             trading_cost_usd = calculate_trading_cost(target_value_usd)
-                            total_trading_cost += trading_cost_usd * exchange_rate  # 円換算
-
-                            # コストを差し引いた価値で株数を計算（ドル建て）
                             net_value_usd = target_value_usd - trading_cost_usd
-                            shares = int(net_value_usd / price)  # 1株未満は切捨て
+                            target_shares = int(net_value_usd / price)  # 1株未満は切捨て
 
-                            if shares > 0:
-                                actual_cost_usd = shares * price + trading_cost_usd  # ドル
-                                usd_remaining_cash -= actual_cost_usd  # ドル
-                                new_usd_portfolio[stock_code] = shares
+                            if target_shares > 0:
+                                target_usd_portfolio[stock_code] = target_shares
 
-                                # 取引履歴に記録（購入）
+                # 3. 保有銘柄の調整（減額が必要な場合の売却）を実行
+                for stock_code, current_shares in temp_usd_portfolio.items():
+                    target_shares = target_usd_portfolio.get(stock_code, 0)
+
+                    if target_shares < current_shares:
+                        # 売却が必要
+                        shares_to_sell = current_shares - target_shares
+
+                        if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
+                            sell_price = current_usd_prices[stock_code]
+                            sell_value_usd = shares_to_sell * sell_price
+                            sell_cost_usd = calculate_trading_cost(sell_value_usd)
+
+                            # 取引コストを記録
+                            total_trading_cost += sell_cost_usd * exchange_rate  # 円換算
+
+                            # 取引履歴に記録
+                            trade_history.append({
+                                'date': trade_date,
+                                'vote_date': yesterday,
+                                'stock_code': stock_code,
+                                'stock_name': get_stock_name(stock_code),
+                                'action': '売却',
+                                'shares': shares_to_sell,
+                                'price': sell_price,
+                                'value': sell_value_usd,
+                                'currency': 'USD',
+                                'exchange_rate': exchange_rate
+                            })
+
+                            # 一時ポートフォリオを更新
+                            temp_usd_portfolio[stock_code] = target_shares
+
+                # 追加売却による現金を更新（ドル建て）
+                usd_cash += additional_usd_cash_from_sales
+
+                # 4. 購入が必要な銘柄を処理
+                for stock_code, target_shares in target_usd_portfolio.items():
+                    current_shares = temp_usd_portfolio.get(stock_code, 0)
+
+                    if target_shares > current_shares:
+                        # 購入が必要
+                        shares_to_buy = target_shares - current_shares
+
+                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
+                        if price is not None and price > 0:
+                            buy_value_usd = shares_to_buy * price
+                            buy_cost_usd = calculate_trading_cost(buy_value_usd)
+                            total_cost_usd = buy_value_usd + buy_cost_usd
+
+                            # 現金が足りる場合のみ購入（ドル建て）
+                            if total_cost_usd <= usd_cash:
+                                usd_cash -= total_cost_usd
+                                usd_cash_for_purchases += total_cost_usd
+                                total_trading_cost += buy_cost_usd * exchange_rate  # 円換算
+
+                                # 取引履歴に記録
                                 trade_history.append({
                                     'date': trade_date,
-                                    'vote_date': current_date,
+                                    'vote_date': yesterday,
                                     'stock_code': stock_code,
                                     'stock_name': get_stock_name(stock_code),
                                     'action': '購入',
-                                    'shares': shares,
+                                    'shares': shares_to_buy,
                                     'price': price,
-                                    'value': shares * price,  # ドル建て
+                                    'value': buy_value_usd,  # ドル建て
                                     'currency': 'USD',
                                     'exchange_rate': exchange_rate,
                                     'buy_price': price,
                                     'sell_price': None
                                 })
-                
-                # ポートフォリオを更新
-                jpy_portfolio = new_jpy_portfolio
-                usd_portfolio = new_usd_portfolio
 
-                # 現金を更新（余った資金を保持）
-                jpy_cash = jpy_remaining_cash  # 円
-                usd_cash = usd_remaining_cash  # ドル
+                                # 一時ポートフォリオを更新
+                                temp_usd_portfolio[stock_code] = target_shares
+                            else:
+                                # 現金が足りない場合は、購入できる分だけ購入
+                                available_shares = int((usd_cash * 0.99) / (price * (1 + TRADING_COSTS['commission_rate'] + TRADING_COSTS['slippage_rate'] + TRADING_COSTS['spread_rate'])))
+                                if available_shares > 0:
+                                    shares_to_buy = available_shares
+                                    buy_value_usd = shares_to_buy * price
+                                    buy_cost_usd = calculate_trading_cost(buy_value_usd)
+                                    total_cost_usd = buy_value_usd + buy_cost_usd
 
-                # 新しいポートフォリオの価値を計算（購入直後の価格で）
-                new_jpy_prices = {}
-                new_usd_prices = {}
+                                    if total_cost_usd <= usd_cash:
+                                        usd_cash -= total_cost_usd
+                                        usd_cash_for_purchases += total_cost_usd
+                                        total_trading_cost += buy_cost_usd * exchange_rate  # 円換算
 
-                # 新しい日本株ポートフォリオの価格を取得
-                for stock_code in jpy_portfolio.keys():
-                    price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
-                    if price is not None:
-                        new_jpy_prices[stock_code] = price
+                                        # 取引履歴に記録
+                                        trade_history.append({
+                                            'date': trade_date,
+                                            'vote_date': yesterday,
+                                            'stock_code': stock_code,
+                                            'stock_name': get_stock_name(stock_code),
+                                            'action': '購入',
+                                            'shares': shares_to_buy,
+                                            'price': price,
+                                            'value': buy_value_usd,  # ドル建て
+                                            'currency': 'USD',
+                                            'exchange_rate': exchange_rate,
+                                            'buy_price': price,
+                                            'sell_price': None
+                                        })
 
-                # 新しい米国株ポートフォリオの価格を取得
-                for stock_code in usd_portfolio.keys():
-                    price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
-                    if price is not None:
-                        new_usd_prices[stock_code] = price
+                                        # 一時ポートフォリオを更新
+                                        temp_usd_portfolio[stock_code] = current_shares + shares_to_buy
 
-                # 新しいポートフォリオの価値を計算（円換算）
-                new_jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, new_jpy_prices, None)
-                new_usd_portfolio_value = calculate_portfolio_value(usd_portfolio, new_usd_prices, None, exchange_rate)
+                # 米国株ポートフォリオを更新
+                usd_portfolio = temp_usd_portfolio.copy()
 
-                # 最終的な総資産価値を計算（すべて円換算）
-                final_total_value = new_jpy_portfolio_value + jpy_cash + new_usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
-                
-                # 結果を記録
-                simulation_results.append({
-                    'date': trade_date,
-                    'vote_date': current_date,
-                    'jpy_portfolio': jpy_portfolio.copy(),
-                    'usd_portfolio': usd_portfolio.copy(),
-                    'jpy_cash': jpy_cash,  # 円
-                    'usd_cash': usd_cash,  # ドル
-                    'total_value': final_total_value,  # 円換算の総資産
-                    'exchange_rate': exchange_rate,
-                    'jpy_portfolio_value': new_jpy_portfolio_value,  # 円
-                    'usd_portfolio_value': new_usd_portfolio_value,  # 円換算
-                    'trading_cost': total_trading_cost  # 円換算
-                })
-        
+        # 毎日の終値でポートフォリオ価値を計算して記録
+        # 当日の終値を取得
+        daily_jpy_prices = {}
+        daily_usd_prices = {}
+
+        # 日本株の終値を取得
+        for stock_code in jpy_portfolio.keys():
+            price = get_stock_price_cached(stock_code, current_date.strftime("%Y-%m-%d"))
+            if price is not None:
+                daily_jpy_prices[stock_code] = price
+
+        # 米国株の終値を取得
+        for stock_code in usd_portfolio.keys():
+            price = get_stock_price_cached(stock_code, current_date.strftime("%Y-%m-%d"))
+            if price is not None:
+                daily_usd_prices[stock_code] = price
+
+        # 終値でのポートフォリオ価値を計算（円換算）
+        daily_jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, daily_jpy_prices, None)
+        daily_usd_portfolio_value = calculate_portfolio_value(usd_portfolio, daily_usd_prices, None, exchange_rate)
+
+        # 当日の総資産価値を計算（すべて円換算）
+        daily_total_value = daily_jpy_portfolio_value + jpy_cash + daily_usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
+
+        # 日次損益率を計算
+        daily_pnl_rate = 0
+
+        # 前日終値との比較（取引日も含む）
+        # 取引日の場合は、取引による影響（実現損益など）も含まれる
+        if previous_total_value > 0:
+            daily_pnl_rate = ((daily_total_value - previous_total_value) / previous_total_value) * 100
+
+        # 結果を記録
+        simulation_results.append({
+            'date': current_date,
+            'vote_date': yesterday if is_trade_day else None,
+            'jpy_portfolio': jpy_portfolio.copy(),
+            'usd_portfolio': usd_portfolio.copy(),
+            'jpy_cash': jpy_cash,  # 円
+            'usd_cash': usd_cash,  # ドル
+            'total_value': daily_total_value,  # 円換算の総資産
+            'exchange_rate': exchange_rate,
+            'jpy_portfolio_value': daily_jpy_portfolio_value,  # 円
+            'usd_portfolio_value': daily_usd_portfolio_value,  # 円換算
+            'trading_cost': total_trading_cost if is_trade_day else 0,  # 円換算
+            'daily_pnl_rate': daily_pnl_rate,  # 日次損益率
+            'is_trade_day': is_trade_day  # 取引日フラグ
+        })
+
+        # 次の日のために前日の総資産価値を更新
+        previous_total_value = daily_total_value
+
         current_date += timedelta(days=1)
     
     return simulation_results, trade_history
 
-def create_calendar_heatmap(simulation_results, trade_history, year, month):
-    """カレンダー形式のヒートマップを作成"""
-    
+def calculate_monthly_pnl(simulation_results, year, month):
+    """
+    指定月の月次損益を計算
+
+    Parameters:
+    simulation_results (list): シミュレーション結果
+    year (int): 年
+    month (int): 月
+
+    Returns:
+    dict: {'pnl_rate': 損益率, 'pnl_amount': 損益額} または None
+    """
     # 指定月のデータをフィルタリング
     month_data = []
     for result in simulation_results:
         if result['date'].year == year and result['date'].month == month:
             month_data.append(result)
-    
+
     if not month_data:
         return None
-    
+
+    # 日付でソート
+    month_data.sort(key=lambda x: x['date'])
+
+    # 月末の価値を取得
+    end_value = month_data[-1]['total_value']
+
+    # 月初の価値を取得（前月末の価値、なければ月初の1日前の想定値）
+    # シミュレーション結果全体から前月末の価値を探す
+    start_value = None
+    month_start_date = month_data[0]['date']
+
+    # 前日の価値を探す
+    for result in simulation_results:
+        if result['date'] < month_start_date:
+            start_value = result['total_value']
+        else:
+            break
+
+    # 前日の価値が見つからない場合は、月初の最初の日の価値を使用
+    if start_value is None:
+        start_value = month_data[0]['total_value']
+
+    # 損益率と損益額を計算
+    if start_value > 0:
+        pnl_amount = end_value - start_value
+        pnl_rate = (pnl_amount / start_value) * 100
+        return {
+            'pnl_rate': pnl_rate,
+            'pnl_amount': pnl_amount
+        }
+
+    return None
+
+def create_calendar_heatmap(simulation_results, trade_history, year, month):
+    """カレンダー形式のヒートマップを作成（実現損益 + 含み損益）"""
+
+    # 指定月のデータをフィルタリング
+    month_data = []
+    for result in simulation_results:
+        if result['date'].year == year and result['date'].month == month:
+            month_data.append(result)
+
+    if not month_data:
+        return None
+
     # カレンダーを作成
     cal = calendar.monthcalendar(year, month)
-    
+
     # データを日付でソート
     month_data.sort(key=lambda x: x['date'])
-    
-    # 日別の損益率を計算（取引履歴に基づく）
-    daily_returns = {}
-    
-    # 指定月の取引履歴を取得
-    month_trades = []
-    for trade in trade_history:
-        if trade['date'].year == year and trade['date'].month == month:
-            month_trades.append(trade)
-    
-    # 日別の取引損益を計算
-    daily_pnl = {}
-    for trade in month_trades:
-        trade_date = trade['date'].day
-        
-        if trade['action'] == '売却':
-            # 売却時の損益を計算
-            # 対応する購入取引を探す（同じ銘柄で最も近い購入）
-            buy_trade = None
-            for buy in trade_history:
-                if (buy['stock_code'] == trade['stock_code'] and 
-                    buy['action'] == '購入' and 
-                    buy['date'] < trade['date']):
-                    if buy_trade is None or buy['date'] > buy_trade['date']:
-                        buy_trade = buy
-            
-            if buy_trade:
-                pnl_per_share = trade['price'] - buy_trade['price']
-                pnl_amount = pnl_per_share * trade['shares']
-                investment_amount = buy_trade['price'] * trade['shares']
 
-                # 円換算（米国株の場合）
-                if trade['currency'] == 'USD' and trade['exchange_rate']:
-                    pnl_amount *= trade['exchange_rate']
-                    investment_amount *= buy_trade['exchange_rate']  # 投資額も円換算
-
-                if trade_date not in daily_pnl:
-                    daily_pnl[trade_date] = {'pnl': 0, 'investment': 0}
-
-                daily_pnl[trade_date]['pnl'] += pnl_amount
-                daily_pnl[trade_date]['investment'] += investment_amount
+    # 日別の損益を計算（実現損益 + 含み損益）
+    daily_pnl_data = {}
     
-    # 日別の損益率を計算
-    for trade_date, data in daily_pnl.items():
-        if data['investment'] > 0:
-            daily_return = (data['pnl'] / data['investment']) * 100
-            daily_returns[trade_date] = daily_return
-        else:
-            daily_returns[trade_date] = 0
+    # 直前の営業日の実現損益・含み損益を保持（日次変化を計算するため）
+    prev_realized_pnl = 0
+    prev_unrealized_pnl = 0
     
-    # 取引がない日は0%とする
+    # 全シミュレーション結果をソート（直前の営業日を探すため）
+    all_results_sorted = sorted(simulation_results, key=lambda x: x['date'])
+    
+    # 月初日の直前の営業日の累積損益を計算
+    if month_data:
+        first_date = month_data[0]['date']
+        # 直前の営業日を探す
+        for prev_result in reversed(all_results_sorted):
+            if prev_result['date'] < first_date:
+                # 直前の営業日の累積実現損益・含み損益を計算
+                prev_date_str = prev_result['date'].strftime('%Y-%m-%d')
+                
+                # 累積実現損益を計算
+                for trade in trade_history:
+                    if trade['date'] <= prev_result['date'] and trade['action'] == '売却':
+                        buy_trade = None
+                        for buy in trade_history:
+                            if (buy['stock_code'] == trade['stock_code'] and
+                                buy['action'] == '購入' and
+                                buy['date'] < trade['date']):
+                                if buy_trade is None or buy['date'] > buy_trade['date']:
+                                    buy_trade = buy
+                        if buy_trade:
+                            pnl_per_share = trade['price'] - buy_trade['price']
+                            pnl_amount = pnl_per_share * trade['shares']
+                            if trade['currency'] == 'USD' and trade['exchange_rate']:
+                                pnl_amount *= trade['exchange_rate']
+                            prev_realized_pnl += pnl_amount
+                
+                # 累積含み損益を計算
+                prev_holdings = {}
+                for trade in trade_history:
+                    if trade['date'] <= prev_result['date']:
+                        stock_code = trade['stock_code']
+                        if stock_code not in prev_holdings:
+                            prev_holdings[stock_code] = {
+                                'total_shares': 0,
+                                'total_cost': 0,
+                                'currency': trade['currency']
+                            }
+                        if trade['action'] == '購入':
+                            prev_holdings[stock_code]['total_shares'] += trade['shares']
+                            cost = trade['price'] * trade['shares']
+                            if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                                cost *= trade['exchange_rate']
+                            prev_holdings[stock_code]['total_cost'] += cost
+                        elif trade['action'] == '売却':
+                            if prev_holdings[stock_code]['total_shares'] > 0:
+                                sell_ratio = trade['shares'] / prev_holdings[stock_code]['total_shares']
+                                prev_holdings[stock_code]['total_shares'] -= trade['shares']
+                                prev_holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
+                
+                for stock_code, holding in prev_holdings.items():
+                    if holding['total_shares'] > 0:
+                        current_price = get_stock_price_cached(stock_code, prev_date_str)
+                        if current_price is not None and current_price > 0:
+                            current_value = current_price * holding['total_shares']
+                            if holding['currency'] == 'USD' and prev_result.get('exchange_rate'):
+                                current_value *= prev_result['exchange_rate']
+                            prev_unrealized_pnl += current_value - holding['total_cost']
+                
+                break
+
+    # 指定月の全ての日付について処理
     for result in month_data:
-        if result['date'].day not in daily_returns:
-            daily_returns[result['date'].day] = 0
-    
+        day = result['date'].day
+        date_str = result['date'].strftime('%Y-%m-%d')
+
+        # === 1. 実現損益の計算（累積値） ===
+        cumulative_realized_pnl = 0
+        realized_detail = []
+
+        # 当日以前の全売却取引から実現損益を計算
+        for trade in trade_history:
+            if trade['date'] <= result['date'] and trade['action'] == '売却':
+                # 対応する購入取引を探す（同じ銘柄で最も近い購入）
+                buy_trade = None
+                for buy in trade_history:
+                    if (buy['stock_code'] == trade['stock_code'] and
+                        buy['action'] == '購入' and
+                        buy['date'] < trade['date']):
+                        if buy_trade is None or buy['date'] > buy_trade['date']:
+                            buy_trade = buy
+
+                if buy_trade:
+                    pnl_per_share = trade['price'] - buy_trade['price']
+                    pnl_amount = pnl_per_share * trade['shares']
+
+                    # 円換算（米国株の場合）
+                    if trade['currency'] == 'USD' and trade['exchange_rate']:
+                        pnl_amount *= trade['exchange_rate']
+
+                    cumulative_realized_pnl += pnl_amount
+                    
+                    # 当日の売却取引のみ詳細に記録
+                    if (trade['date'].year == year and
+                        trade['date'].month == month and
+                        trade['date'].day == day):
+                        realized_detail.append({
+                            'stock_code': trade['stock_code'],
+                            'pnl': pnl_amount
+                        })
+
+        # === 2. 含み損益の計算（累積値） ===
+        cumulative_unrealized_pnl = 0
+        unrealized_detail = []
+
+        # 当日時点での保有銘柄の購入価格を計算（加重平均）
+        holdings = {}  # {stock_code: {'total_shares': X, 'total_cost': Y, 'currency': Z}}
+
+        # 当日以前の全取引履歴から保有状況を再構築
+        for trade in trade_history:
+            if trade['date'] <= result['date']:
+                stock_code = trade['stock_code']
+
+                if stock_code not in holdings:
+                    holdings[stock_code] = {
+                        'total_shares': 0,
+                        'total_cost': 0,
+                        'currency': trade['currency']
+                    }
+
+                if trade['action'] == '購入':
+                    # 購入：株数と総コストを加算
+                    holdings[stock_code]['total_shares'] += trade['shares']
+                    cost = trade['price'] * trade['shares']
+
+                    # 円換算で保存（米国株の場合）
+                    if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                        cost *= trade['exchange_rate']
+
+                    holdings[stock_code]['total_cost'] += cost
+
+                elif trade['action'] == '売却':
+                    # 売却：株数と総コストを比例配分で減算
+                    if holdings[stock_code]['total_shares'] > 0:
+                        sell_ratio = trade['shares'] / holdings[stock_code]['total_shares']
+                        holdings[stock_code]['total_shares'] -= trade['shares']
+                        holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
+
+        # 当日の保有銘柄について含み損益を計算
+        for stock_code, holding in holdings.items():
+            if holding['total_shares'] > 0:
+                # 現在価格を取得
+                current_price = get_stock_price_cached(stock_code, date_str)
+
+                if current_price is not None and current_price > 0:
+                    # 評価額を計算
+                    current_value = current_price * holding['total_shares']
+
+                    # 米国株の場合は円換算
+                    if holding['currency'] == 'USD' and result.get('exchange_rate'):
+                        current_value *= result['exchange_rate']
+
+                    # 含み損益 = 評価額 - 取得原価
+                    pnl = current_value - holding['total_cost']
+                    cumulative_unrealized_pnl += pnl
+                    unrealized_detail.append({
+                        'stock_code': stock_code,
+                        'pnl': pnl
+                    })
+
+        # === 3. 日次変化を計算 ===
+        # 実現損益の日次変化（当日の累積値 - 前日の累積値）
+        daily_realized_pnl_change = cumulative_realized_pnl - prev_realized_pnl
+        
+        # 含み損益の日次変化（当日の累積値 - 前日の累積値）
+        daily_unrealized_pnl_change = cumulative_unrealized_pnl - prev_unrealized_pnl
+        
+        # 合計損益の日次変化
+        total_pnl_change = daily_realized_pnl_change + daily_unrealized_pnl_change
+
+        # 日次損益率を取得
+        daily_pnl_rate = result.get('daily_pnl_rate', 0)
+
+        daily_pnl_data[day] = {
+            'total_pnl': total_pnl_change,  # 日次変化
+            'realized_pnl': daily_realized_pnl_change,  # 日次変化
+            'unrealized_pnl': daily_unrealized_pnl_change,  # 日次変化
+            'realized_detail': realized_detail,
+            'unrealized_detail': unrealized_detail,
+            'daily_pnl_rate': daily_pnl_rate,
+            # 累積値も保持（次の日の計算のため）
+            '_cumulative_realized_pnl': cumulative_realized_pnl,
+            '_cumulative_unrealized_pnl': cumulative_unrealized_pnl
+        }
+        
+        # 次の日のために前日の累積値を更新
+        prev_realized_pnl = cumulative_realized_pnl
+        prev_unrealized_pnl = cumulative_unrealized_pnl
+
+    # 月次損益を計算
+    monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
+
     # カレンダーのHTMLを作成
     month_name = calendar.month_name[month]
-    html = f"<h3>{year}年{month}月</h3>"
+    title = f"{year}年{month}月"
+
+    # 月次損益情報を追加
+    if monthly_pnl:
+        pnl_rate = monthly_pnl['pnl_rate']
+        pnl_amount = monthly_pnl['pnl_amount']
+
+        # プラスマイナスの符号を付ける
+        pnl_rate_str = f"+{pnl_rate:.2f}" if pnl_rate >= 0 else f"{pnl_rate:.2f}"
+        pnl_amount_str = f"+{pnl_amount:,.0f}" if pnl_amount >= 0 else f"{pnl_amount:,.0f}"
+
+        # 色を設定（プラスは青、マイナスは赤）
+        color = "blue" if pnl_rate >= 0 else "red"
+
+        title += f" | <span style='color: {color};'>損益率: {pnl_rate_str}% | 損益額: {pnl_amount_str}円</span>"
+
+    html = f"<h3>{title} - 損益カレンダー（実現 + 含み）</h3>"
     html += "<table style='border-collapse: collapse; width: 100%;'>"
-    
+
     # 曜日のヘッダー
     html += "<tr><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th>土</th><th>日</th></tr>"
-    
+
     for week in cal:
         html += "<tr>"
         for day in week:
             if day == 0:
                 html += "<td></td>"
             else:
-                if day in daily_returns:
-                    return_rate = daily_returns[day]
+                if day in daily_pnl_data:
+                    data = daily_pnl_data[day]
+                    total_pnl = data['total_pnl']
+                    realized_pnl = data['realized_pnl']
+                    unrealized_pnl = data['unrealized_pnl']
+                    daily_pnl_rate = data.get('daily_pnl_rate', 0)
+
                     # 色を決定（赤：マイナス、青：プラス）
-                    if return_rate < 0:
-                        color = f"rgba(255, 0, 0, {min(abs(return_rate) / 5, 1)})"
+                    # 色の濃さは損益の絶対値に応じて調整（100万円を基準）
+                    opacity = min(abs(total_pnl) / 1000000, 1)
+                    if total_pnl < 0:
+                        color = f"rgba(255, 0, 0, {opacity})"
                     else:
-                        color = f"rgba(0, 0, 255, {min(return_rate / 5, 1)})"
-                    
-                    html += f"<td style='background-color: {color}; text-align: center; padding: 5px; border: 1px solid #ccc;'>{day}<br/>{return_rate:.1f}%</td>"
+                        color = f"rgba(0, 0, 255, {opacity})"
+
+                    # ツールチップ用のタイトルを作成（日次変化）
+                    tooltip = f"合計(日次変化): {total_pnl:,.0f}円\\n実現(日次変化): {realized_pnl:,.0f}円\\n含み(日次変化): {unrealized_pnl:,.0f}円\\n損益率: {daily_pnl_rate:.2f}%"
+
+                    # 表示テキストを作成（万円単位、日次変化）
+                    display_text = f"{day}<br/>"
+                    display_text += f"<small>合計: {total_pnl/10000:+,.0f}万</small><br/>"
+                    display_text += f"<small style='color: #333;'>実: {realized_pnl/10000:+,.0f}万</small><br/>"
+                    display_text += f"<small style='color: #333;'>含: {unrealized_pnl/10000:+,.0f}万</small><br/>"
+
+                    # 損益率を追加（色付き）
+                    rate_color = "blue" if daily_pnl_rate >= 0 else "red"
+                    rate_sign = "+" if daily_pnl_rate >= 0 else ""
+                    display_text += f"<small style='color: {rate_color}; font-weight: bold;'>{rate_sign}{daily_pnl_rate:.2f}%</small>"
+
+                    html += f"<td style='background-color: {color}; text-align: center; padding: 5px; border: 1px solid #ccc;' title='{tooltip}'>{display_text}</td>"
                 else:
                     html += f"<td style='text-align: center; padding: 5px; border: 1px solid #ccc;'>{day}</td>"
         html += "</tr>"
-    
+
     html += "</table>"
-    
+    html += "<p style='font-size: 12px; color: #666;'>※ 合計=実現損益+含み損益の日次変化、実=実現損益の日次変化、含=含み損益の日次変化（単位：万円、直前の営業日との差分）、損益率=日次損益率（%）</p>"
+
     return html
+
+def create_yearly_summary(simulation_results, year):
+    """
+    指定年の月別損益サマリーを作成
+
+    Parameters:
+    simulation_results (list): シミュレーション結果
+    year (int): 年
+
+    Returns:
+    pd.DataFrame: 月別損益サマリー
+    """
+    monthly_data = []
+
+    for month in range(1, 13):
+        monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
+
+        if monthly_pnl:
+            pnl_rate = monthly_pnl['pnl_rate']
+            pnl_amount = monthly_pnl['pnl_amount']
+
+            # プラスマイナスの符号を付ける
+            pnl_rate_str = f"+{pnl_rate:.2f}%" if pnl_rate >= 0 else f"{pnl_rate:.2f}%"
+            pnl_amount_str = f"+{pnl_amount:,.0f}" if pnl_amount >= 0 else f"{pnl_amount:,.0f}"
+
+            monthly_data.append({
+                '月': f"{month}月",
+                '損益率': pnl_rate_str,
+                '損益額（円）': pnl_amount_str,
+                '_pnl_rate_value': pnl_rate,  # ソート用の数値
+                '_pnl_amount_value': pnl_amount  # ソート用の数値
+            })
+        else:
+            monthly_data.append({
+                '月': f"{month}月",
+                '損益率': '-',
+                '損益額（円）': '-',
+                '_pnl_rate_value': 0,
+                '_pnl_amount_value': 0
+            })
+
+    df = pd.DataFrame(monthly_data)
+
+    return df
 
 def calculate_risk_metrics(simulation_results):
     """リスク指標を計算"""
@@ -705,8 +1463,11 @@ def create_performance_chart(simulation_results, initial_investment):
     return fig
 
 def show(selected_date):
+    # 株価キャッシュテーブルを初期化
+    init_price_cache_table()
+
     st.title("投資シミュレーション")
-    
+
     # 設定パネル
     with st.expander("シミュレーション設定", expanded=True):
         col1, col2 = st.columns(2)
@@ -847,25 +1608,72 @@ def show(selected_date):
             st.plotly_chart(fig, use_container_width=True)
         
         # カレンダー表示
-        st.subheader("月別カレンダー")
-        
-        # 年と月の選択
+        st.subheader("損益カレンダー")
+
+        # 表示モード選択
+        display_mode = st.radio("表示モード", ["月別表示", "年間表示"], horizontal=True)
+
+        # 年の選択
         if simulation_results:
             min_year = min(result['date'].year for result in simulation_results)
             max_year = max(result['date'].year for result in simulation_results)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                selected_year = st.selectbox("年", range(min_year, max_year + 1), index=max_year - min_year)
-            with col2:
-                selected_month = st.selectbox("月", range(1, 13))
-            
-            # カレンダーを表示
-            calendar_html = create_calendar_heatmap(simulation_results, st.session_state.trade_history, selected_year, selected_month)
-            if calendar_html:
-                st.markdown(calendar_html, unsafe_allow_html=True)
+
+            if display_mode == "月別表示":
+                # 月別表示モード
+                col1, col2 = st.columns(2)
+                with col1:
+                    selected_year = st.selectbox("年", range(min_year, max_year + 1), index=max_year - min_year, key="year_monthly")
+                with col2:
+                    selected_month = st.selectbox("月", range(1, 13), key="month_monthly")
+
+                # カレンダーを表示
+                calendar_html = create_calendar_heatmap(simulation_results, st.session_state.trade_history, selected_year, selected_month)
+                if calendar_html:
+                    st.markdown(calendar_html, unsafe_allow_html=True)
+                else:
+                    st.info("選択された月のデータがありません。")
+
             else:
-                st.info("選択された月のデータがありません。")
+                # 年間表示モード
+                selected_year = st.selectbox("年", range(min_year, max_year + 1), index=max_year - min_year, key="year_yearly")
+
+                # 年間サマリーを作成
+                yearly_df = create_yearly_summary(simulation_results, selected_year)
+
+                if not yearly_df.empty:
+                    # 表示用のDataFrameを作成（ソート用カラムを除外）
+                    display_df = yearly_df[['月', '損益率', '損益額（円）']].copy()
+
+                    # DataFrameのスタイリング関数
+                    def style_yearly_summary(df):
+                        def color_cells(row):
+                            # 対応する行のインデックスを取得
+                            idx = row.name
+                            pnl_rate_value = yearly_df.loc[idx, '_pnl_rate_value']
+
+                            # 色を決定
+                            if pnl_rate_value > 0:
+                                color = 'blue'
+                            elif pnl_rate_value < 0:
+                                color = 'red'
+                            else:
+                                color = 'black'
+
+                            # 各セルにスタイルを適用
+                            return [''] + [f'color: {color}'] * 2  # 月列以外に色を適用
+
+                        return df.style.apply(color_cells, axis=1)
+
+                    # スタイル付きのDataFrameを表示
+                    st.dataframe(style_yearly_summary(display_df), use_container_width=True, height=500)
+
+                    # 年間合計を計算
+                    total_pnl_amount = yearly_df['_pnl_amount_value'].sum()
+                    total_pnl_amount_str = f"+{total_pnl_amount:,.0f}" if total_pnl_amount >= 0 else f"{total_pnl_amount:,.0f}"
+
+                    st.info(f"**{selected_year}年 年間合計損益額: {total_pnl_amount_str}円**")
+                else:
+                    st.info("選択された年のデータがありません。")
         
         # ポートフォリオ詳細表示
         st.subheader("ポートフォリオ詳細")
@@ -1021,7 +1829,7 @@ def show(selected_date):
         for result in simulation_results:
             df_data.append({
                 '取引日': result['date'].strftime('%Y-%m-%d'),
-                '投票日': result['vote_date'].strftime('%Y-%m-%d'),
+                '投票日': result['vote_date'].strftime('%Y-%m-%d') if result['vote_date'] else '-',
                 'ポートフォリオ価値': f"¥{result['total_value']:,.0f}",
                 '日本株価値': f"¥{result['jpy_portfolio_value']:,.0f}",
                 '米国株価値': f"¥{result['usd_portfolio_value']:,.0f}",
@@ -1042,5 +1850,134 @@ def show(selected_date):
             label="シミュレーション結果をCSVダウンロード",
             data=csv,
             file_name=f"investment_simulation_{start_date.strftime('%Y%m%d')}.csv",
+            mime='text/csv',
+        )
+
+        # 損益詳細テーブル
+        st.subheader("損益詳細")
+
+        # 損益詳細データを作成（カレンダー表示と同じロジック）
+        pnl_detail_data = []
+        
+        # 直前の営業日の実現損益・含み損益を保持（日次変化を計算するため）
+        prev_realized_pnl = 0
+        prev_unrealized_pnl = 0
+
+        for result in simulation_results:
+            result_date = result['date']
+            date_str = result_date.strftime('%Y-%m-%d')
+
+            # === 実現損益の計算（累積値） ===
+            cumulative_realized_pnl = 0
+            realized_trades = []
+
+            # 当日以前の全売却取引から実現損益を計算
+            for trade in st.session_state.trade_history:
+                if trade['date'] <= result_date and trade['action'] == '売却':
+                    # 対応する購入取引を探す
+                    buy_trade = None
+                    for buy in st.session_state.trade_history:
+                        if (buy['stock_code'] == trade['stock_code'] and
+                            buy['action'] == '購入' and
+                            buy['date'] < trade['date']):
+                            if buy_trade is None or buy['date'] > buy_trade['date']:
+                                buy_trade = buy
+
+                    if buy_trade:
+                        pnl_per_share = trade['price'] - buy_trade['price']
+                        pnl_amount = pnl_per_share * trade['shares']
+
+                        # 円換算（米国株の場合）
+                        if trade['currency'] == 'USD' and trade['exchange_rate']:
+                            pnl_amount *= trade['exchange_rate']
+
+                        cumulative_realized_pnl += pnl_amount
+                        
+                        # 当日の売却取引のみ詳細に記録
+                        if trade['date'] == result_date:
+                            realized_trades.append(f"{trade['stock_code']}:{pnl_amount/10000:.1f}万")
+
+            # === 含み損益の計算（累積値） ===
+            cumulative_unrealized_pnl = 0
+            holdings = {}
+
+            # 当日以前の全取引履歴から保有状況を再構築
+            for trade in st.session_state.trade_history:
+                if trade['date'] <= result_date:
+                    stock_code = trade['stock_code']
+
+                    if stock_code not in holdings:
+                        holdings[stock_code] = {
+                            'total_shares': 0,
+                            'total_cost': 0,
+                            'currency': trade['currency']
+                        }
+
+                    if trade['action'] == '購入':
+                        holdings[stock_code]['total_shares'] += trade['shares']
+                        cost = trade['price'] * trade['shares']
+
+                        if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                            cost *= trade['exchange_rate']
+
+                        holdings[stock_code]['total_cost'] += cost
+
+                    elif trade['action'] == '売却':
+                        if holdings[stock_code]['total_shares'] > 0:
+                            sell_ratio = trade['shares'] / holdings[stock_code]['total_shares']
+                            holdings[stock_code]['total_shares'] -= trade['shares']
+                            holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
+
+            # 含み損益を計算
+            unrealized_holdings = []
+            for stock_code, holding in holdings.items():
+                if holding['total_shares'] > 0:
+                    current_price = get_stock_price_cached(stock_code, date_str)
+
+                    if current_price is not None and current_price > 0:
+                        current_value = current_price * holding['total_shares']
+
+                        if holding['currency'] == 'USD' and result.get('exchange_rate'):
+                            current_value *= result['exchange_rate']
+
+                        pnl = current_value - holding['total_cost']
+                        cumulative_unrealized_pnl += pnl
+                        unrealized_holdings.append(f"{stock_code}:{pnl/10000:.1f}万")
+
+            # === 日次変化を計算 ===
+            # 実現損益の日次変化（当日の累積値 - 前日の累積値）
+            daily_realized_pnl_change = cumulative_realized_pnl - prev_realized_pnl
+            
+            # 含み損益の日次変化（当日の累積値 - 前日の累積値）
+            daily_unrealized_pnl_change = cumulative_unrealized_pnl - prev_unrealized_pnl
+            
+            # 合計損益の日次変化
+            total_pnl_change = daily_realized_pnl_change + daily_unrealized_pnl_change
+
+            pnl_detail_data.append({
+                '日付': date_str,
+                '曜日': ['月', '火', '水', '木', '金', '土', '日'][result_date.weekday()],
+                '合計損益（万円）': f"{total_pnl_change/10000:+,.1f}",
+                '実現損益（万円）': f"{daily_realized_pnl_change/10000:+,.1f}",
+                '含み損益（万円）': f"{daily_unrealized_pnl_change/10000:+,.1f}",
+                '日次損益率（%）': f"{result.get('daily_pnl_rate', 0):.2f}",
+                'ポートフォリオ価値（万円）': f"{result['total_value']/10000:,.1f}",
+                '実現損益詳細': '|'.join(realized_trades) if realized_trades else '-',
+                '含み損益詳細': '|'.join(unrealized_holdings) if unrealized_holdings else '-'
+            })
+            
+            # 次の日のために前日の累積値を更新
+            prev_realized_pnl = cumulative_realized_pnl
+            prev_unrealized_pnl = cumulative_unrealized_pnl
+
+        pnl_df = pd.DataFrame(pnl_detail_data)
+        st.dataframe(pnl_df, use_container_width=True)
+
+        # 損益詳細CSVダウンロード
+        pnl_csv = pnl_df.to_csv(index=False).encode('shift-jis', errors='replace')
+        st.download_button(
+            label="損益詳細をCSVダウンロード",
+            data=pnl_csv,
+            file_name=f"pnl_detail_{start_date.strftime('%Y%m%d')}.csv",
             mime='text/csv',
         )
