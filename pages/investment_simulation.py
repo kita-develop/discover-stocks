@@ -1276,6 +1276,23 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
 
         title += f" | <span style='color: {color};'>損益率: {pnl_rate_str}% | 損益額: {pnl_amount_str}円</span>"
 
+        # 損益内訳を計算（実現損益 + 含み損益との差分をその他として扱う）
+        monthly_realized_total = sum(data['realized_pnl'] for data in daily_pnl_data.values())
+        monthly_unrealized_total = sum(data['unrealized_pnl'] for data in daily_pnl_data.values())
+        other_pnl = pnl_amount - (monthly_realized_total + monthly_unrealized_total)
+
+        def format_man(value):
+            sign = "+" if value >= 0 else ""
+            return f"{sign}{value / 10000:,.1f}万円"
+
+        title += (
+            "<br/><span style='font-size: 0.9em; color: #666;'>"
+            f"実現損益: {format_man(monthly_realized_total)} / "
+            f"含み損益: {format_man(monthly_unrealized_total)} / "
+            f"その他（現金・為替等）: {format_man(other_pnl)}"
+            "</span>"
+        )
+
     html = f"<h3>{title}</h3>"
     # darkモード対応のスタイルを追加（Streamlitのテーマに合わせる）
     html += """
