@@ -204,6 +204,35 @@ def get_next_business_day(date_obj):
         next_day += timedelta(days=1)
     return next_day
 
+def get_latest_vote_date(trade_date):
+    """
+    取引日に対応する直近の投票日を取得（月曜日→土曜日、 水曜日→火曜日）
+
+    Parameters:
+    trade_date (date): 取引日
+
+    Returns:
+    date or None: 対応する投票日、該当しない場合はNone
+    """
+    if trade_date is None:
+        return None
+
+    weekday = trade_date.weekday()
+
+    # 水曜日の場合は前日の火曜日が投票日
+    if weekday == 2:
+        candidate = trade_date - timedelta(days=1)
+        if candidate.weekday() == 1:
+            return candidate
+
+    # 月曜日の場合は2日前の土曜日が投票日
+    if weekday == 0:
+        candidate = trade_date - timedelta(days=2)
+        if candidate.weekday() == 5:
+            return candidate
+
+    return None
+
 def get_vote_results_for_date_separated(vote_date):
     """指定日の投票結果を日本株と米国株に分けて取得"""
     conn = get_connection()
@@ -341,19 +370,15 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
             current_date += timedelta(days=1)
             continue
 
-        # 取引処理: 前日が火曜日(1)または土曜日(5)の投票日だった場合、今日が取引日
-        yesterday = current_date - timedelta(days=1)
-        # 土日をスキップして実際の前営業日を見つける
-        while yesterday.weekday() >= 5:
-            yesterday -= timedelta(days=1)
-
-        is_trade_day = yesterday.weekday() in [1, 5]
+        # 取引処理: 火曜日・土曜日の投票翌営業日（月曜・水曜）に取引を実施
+        vote_date = get_latest_vote_date(current_date)
+        is_trade_day = vote_date is not None
 
         # 取引コストを初期化（取引日の場合のみ使用）
         total_trading_cost = 0
 
         if is_trade_day:
-            vote_date_str = yesterday.strftime("%Y-%m-%d")
+            vote_date_str = vote_date.strftime("%Y-%m-%d")
             jpy_stocks, usd_stocks = get_vote_results_for_date_separated(vote_date_str)
 
             if jpy_stocks or usd_stocks:
@@ -415,7 +440,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                             # 取引履歴に記録
                             trade_history.append({
                                 'date': trade_date,
-                                'vote_date': yesterday,
+                                'vote_date': vote_date,
                                 'stock_code': stock_code,
                                 'stock_name': get_stock_name(stock_code),
                                 'action': '売却',
@@ -547,7 +572,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                             # 取引履歴に記録
                             trade_history.append({
                                 'date': trade_date,
-                                'vote_date': yesterday,
+                                'vote_date': vote_date,
                                 'stock_code': stock_code,
                                 'stock_name': get_stock_name(stock_code),
                                 'action': '売却',
@@ -587,7 +612,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                                 # 取引履歴に記録
                                 trade_history.append({
                                     'date': trade_date,
-                                    'vote_date': yesterday,
+                                    'vote_date': vote_date,
                                     'stock_code': stock_code,
                                     'stock_name': get_stock_name(stock_code),
                                     'action': '購入',
@@ -619,7 +644,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                                         # 取引履歴に記録
                                         trade_history.append({
                                             'date': trade_date,
-                                            'vote_date': yesterday,
+                                            'vote_date': vote_date,
                                             'stock_code': stock_code,
                                             'stock_name': get_stock_name(stock_code),
                                             'action': '購入',
@@ -663,7 +688,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                             # 取引履歴に記録
                             trade_history.append({
                                 'date': trade_date,
-                                'vote_date': yesterday,
+                                'vote_date': vote_date,
                                 'stock_code': stock_code,
                                 'stock_name': get_stock_name(stock_code),
                                 'action': '売却',
@@ -808,7 +833,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                             # 取引履歴に記録
                             trade_history.append({
                                 'date': trade_date,
-                                'vote_date': yesterday,
+                                'vote_date': vote_date,
                                 'stock_code': stock_code,
                                 'stock_name': get_stock_name(stock_code),
                                 'action': '売却',
@@ -848,7 +873,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                                 # 取引履歴に記録
                                 trade_history.append({
                                     'date': trade_date,
-                                    'vote_date': yesterday,
+                                    'vote_date': vote_date,
                                     'stock_code': stock_code,
                                     'stock_name': get_stock_name(stock_code),
                                     'action': '購入',
@@ -880,7 +905,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                                         # 取引履歴に記録
                                         trade_history.append({
                                             'date': trade_date,
-                                            'vote_date': yesterday,
+                                            'vote_date': vote_date,
                                             'stock_code': stock_code,
                                             'stock_name': get_stock_name(stock_code),
                                             'action': '購入',
@@ -934,7 +959,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
         # 結果を記録
         simulation_results.append({
             'date': current_date,
-            'vote_date': yesterday if is_trade_day else None,
+            'vote_date': vote_date if is_trade_day else None,
             'jpy_portfolio': jpy_portfolio.copy(),
             'usd_portfolio': usd_portfolio.copy(),
             'jpy_cash': jpy_cash,  # 円
