@@ -278,8 +278,8 @@ def calculate_portfolio_value(portfolio, current_prices, allocation_ratios, exch
                     continue
                 stock_value *= exchange_rate
             
-            # 異常な評価額をチェック（1億円を超える場合は無効）
-            if stock_value > 100000000:
+            # 異常な評価額をチェック（10兆円を超える場合は無効）
+            if stock_value > 10000000000000:
                 continue
                 
             total_value += stock_value
@@ -1006,7 +1006,7 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
             month_data.append(result)
 
     if not month_data:
-        return None
+        return None, []
 
     # カレンダーを作成
     cal = calendar.monthcalendar(year, month)
@@ -1233,8 +1233,29 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
 
         title += f" | <span style='color: {color};'>損益率: {pnl_rate_str}% | 損益額: {pnl_amount_str}円</span>"
 
-    html = f"<h3>{title} - 損益カレンダー（実現 + 含み）</h3>"
-    html += "<table style='border-collapse: collapse; width: 100%;'>"
+    html = f"<h3>{title}</h3>"
+    # darkモード対応のスタイルを追加（Streamlitのテーマに合わせる）
+    html += """
+    <style>
+        table.calendar-table {
+            border-collapse: collapse;
+            width: 100%;
+            background-color: transparent;
+            color: inherit;
+        }
+        table.calendar-table th {
+            background-color: transparent;
+            color: inherit;
+            padding: 8px;
+            border: 1px solid rgba(250, 250, 250, 0.2);
+        }
+        table.calendar-table td {
+            background-color: transparent;
+            color: inherit;
+        }
+    </style>
+    """
+    html += "<table class='calendar-table' style='border-collapse: collapse; width: 100%;'>"
 
     # 曜日のヘッダー
     html += "<tr><th>月</th><th>火</th><th>水</th><th>木</th><th>金</th><th>土</th><th>日</th></tr>"
@@ -1252,37 +1273,47 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
                     unrealized_pnl = data['unrealized_pnl']
                     daily_pnl_rate = data.get('daily_pnl_rate', 0)
 
-                    # 色を決定（赤：マイナス、青：プラス）
-                    # 色の濃さは損益の絶対値に応じて調整（100万円を基準）
-                    opacity = min(abs(total_pnl) / 1000000, 1)
-                    if total_pnl < 0:
-                        color = f"rgba(255, 0, 0, {opacity})"
-                    else:
-                        color = f"rgba(0, 0, 255, {opacity})"
+                    # 枠線の色を決定（損益に関係なく固定色）
+                    border_width = 2
+                    border_color = "rgba(128, 128, 128, 0.6)"  # グレー（固定、Light/Dark両方で見える）
 
                     # ツールチップ用のタイトルを作成（日次変化）
                     tooltip = f"合計(日次変化): {total_pnl:,.0f}円\\n実現(日次変化): {realized_pnl:,.0f}円\\n含み(日次変化): {unrealized_pnl:,.0f}円\\n損益率: {daily_pnl_rate:.2f}%"
 
                     # 表示テキストを作成（万円単位、日次変化）
-                    display_text = f"{day}<br/>"
-                    display_text += f"<small>合計: {total_pnl/10000:+,.0f}万</small><br/>"
-                    display_text += f"<small style='color: #333;'>実: {realized_pnl/10000:+,.0f}万</small><br/>"
-                    display_text += f"<small style='color: #333;'>含: {unrealized_pnl/10000:+,.0f}万</small><br/>"
+                    # 色を決定（プラスは青、マイナスは赤）
+                    total_color = "blue" if total_pnl >= 0 else "red"
+                    realized_color = "blue" if realized_pnl >= 0 else "red"
+                    unrealized_color = "blue" if unrealized_pnl >= 0 else "red"
+                    rate_color = "blue" if daily_pnl_rate >= 0 else "red"
+                    
+                    display_text = f"<strong style='font-size: 14px;'>{day}</strong><br/>"
+                    display_text += f"<small style='color: {total_color};'>合計: {total_pnl/10000:+,.0f}万</small><br/>"
+                    display_text += f"<small style='color: {realized_color};'>実: {realized_pnl/10000:+,.0f}万</small><br/>"
+                    display_text += f"<small style='color: {unrealized_color};'>含: {unrealized_pnl/10000:+,.0f}万</small><br/>"
 
                     # 損益率を追加（色付き）
-                    rate_color = "blue" if daily_pnl_rate >= 0 else "red"
                     rate_sign = "+" if daily_pnl_rate >= 0 else ""
                     display_text += f"<small style='color: {rate_color}; font-weight: bold;'>{rate_sign}{daily_pnl_rate:.2f}%</small>"
 
-                    html += f"<td style='background-color: {color}; text-align: center; padding: 5px; border: 1px solid #ccc;' title='{tooltip}'>{display_text}</td>"
+                    # darkモード対応の背景色（透明にしてStreamlitのテーマに合わせる）
+                    html += f"<td style='background-color: transparent; text-align: center; padding: 5px; border: {border_width}px solid {border_color};' title='{tooltip}'>{display_text}</td>"
                 else:
-                    html += f"<td style='text-align: center; padding: 5px; border: 1px solid #ccc;'>{day}</td>"
+                    html += f"<td style='background-color: transparent; text-align: center; padding: 5px; border: 2px solid rgba(128, 128, 128, 0.6);'>{day}</td>"
         html += "</tr>"
 
     html += "</table>"
     html += "<p style='font-size: 12px; color: #666;'>※ 合計=実現損益+含み損益の日次変化、実=実現損益の日次変化、含=含み損益の日次変化（単位：万円、直前の営業日との差分）、損益率=日次損益率（%）</p>"
 
-    return html
+    # グラフ用のデータを準備
+    chart_data = []
+    for day, data in sorted(daily_pnl_data.items()):
+        chart_data.append({
+            'day': day,
+            'total_pnl': data['total_pnl']
+        })
+
+    return html, chart_data
 
 def create_yearly_summary(simulation_results, year):
     """
@@ -1624,16 +1655,117 @@ def show(selected_date):
 
             if display_mode == "月別表示":
                 # 月別表示モード
-                col1, col2 = st.columns(2)
+                # 前月・次月のナビゲーション
+                # 初期表示を終了日の年・月にする
+                if 'selected_year_monthly' not in st.session_state or 'selected_month_monthly' not in st.session_state:
+                    # 終了日（最後のシミュレーション結果の日付）の年・月を取得
+                    if simulation_results:
+                        end_date_result = simulation_results[-1]['date']
+                        st.session_state.selected_year_monthly = end_date_result.year
+                        st.session_state.selected_month_monthly = end_date_result.month
+                    else:
+                        st.session_state.selected_year_monthly = max_year
+                        st.session_state.selected_month_monthly = 12
+                
+                col1, col2, col3, col4 = st.columns([1, 2, 2, 1])
+                
+                # 前月ボタン
                 with col1:
-                    selected_year = st.selectbox("年", range(min_year, max_year + 1), index=max_year - min_year, key="year_monthly")
+                    if st.button("◀", key="prev_month", help="前月"):
+                        st.session_state.selected_month_monthly -= 1
+                        if st.session_state.selected_month_monthly < 1:
+                            st.session_state.selected_month_monthly = 12
+                            st.session_state.selected_year_monthly -= 1
+                            if st.session_state.selected_year_monthly < min_year:
+                                st.session_state.selected_year_monthly = min_year
+                                st.session_state.selected_month_monthly = 1
+                        st.rerun()
+                
+                # 年選択
                 with col2:
-                    selected_month = st.selectbox("月", range(1, 13), key="month_monthly")
+                    year_index = list(range(min_year, max_year + 1)).index(st.session_state.selected_year_monthly) if st.session_state.selected_year_monthly in range(min_year, max_year + 1) else max_year - min_year
+                    selected_year = st.selectbox("年", range(min_year, max_year + 1), index=year_index, key="year_monthly")
+                    if selected_year != st.session_state.selected_year_monthly:
+                        st.session_state.selected_year_monthly = selected_year
+                
+                # 月選択
+                with col3:
+                    month_index = st.session_state.selected_month_monthly - 1 if 1 <= st.session_state.selected_month_monthly <= 12 else 11
+                    selected_month = st.selectbox("月", range(1, 13), index=month_index, key="month_monthly")
+                    if selected_month != st.session_state.selected_month_monthly:
+                        st.session_state.selected_month_monthly = selected_month
+                
+                # 次月ボタン
+                with col4:
+                    if st.button("▶", key="next_month", help="次月"):
+                        st.session_state.selected_month_monthly += 1
+                        if st.session_state.selected_month_monthly > 12:
+                            st.session_state.selected_month_monthly = 1
+                            st.session_state.selected_year_monthly += 1
+                            if st.session_state.selected_year_monthly > max_year:
+                                st.session_state.selected_year_monthly = max_year
+                                st.session_state.selected_month_monthly = 12
+                        st.rerun()
+                
+                # session_stateから値を取得（ボタンで変更された場合に反映）
+                selected_year = st.session_state.selected_year_monthly
+                selected_month = st.session_state.selected_month_monthly
 
                 # カレンダーを表示
-                calendar_html = create_calendar_heatmap(simulation_results, st.session_state.trade_history, selected_year, selected_month)
-                if calendar_html:
+                result = create_calendar_heatmap(simulation_results, st.session_state.trade_history, selected_year, selected_month)
+                if result:
+                    calendar_html, chart_data = result
                     st.markdown(calendar_html, unsafe_allow_html=True)
+                    
+                    # 棒グラフを表示
+                    # 1ヶ月分の日付を生成（データがない日も含める）
+                    days_in_month = calendar.monthrange(selected_year, selected_month)[1]
+                    all_days = list(range(1, days_in_month + 1))
+                    
+                    # データがある日付を辞書に変換
+                    chart_dict = {}
+                    if chart_data:
+                        chart_dict = {row['day']: row['total_pnl'] / 10000 for row in chart_data}
+                    
+                    # 全日のデータを作成（データがない日は0）
+                    full_chart_data = []
+                    for day in all_days:
+                        pnl_value = chart_dict.get(day, 0)
+                        full_chart_data.append({
+                            'day': day,
+                            'total_pnl_man': pnl_value
+                        })
+                    
+                    chart_df = pd.DataFrame(full_chart_data)
+                    
+                    fig = px.bar(
+                        chart_df,
+                        x='day',
+                        y='total_pnl_man',
+                        title=f"{selected_year}年{selected_month}月 日次損益推移",
+                        labels={'total_pnl_man': '損益額（万円）', 'day': '日付'},
+                        color='total_pnl_man',
+                        color_continuous_scale=['red', 'white', 'blue'],
+                        color_continuous_midpoint=0
+                    )
+                    fig.update_layout(
+                        height=400,
+                        showlegend=False,
+                        xaxis_title="日付",
+                        yaxis_title="損益額（万円）",
+                        xaxis=dict(
+                            tickmode='linear',
+                            tick0=1,
+                            dtick=1,
+                            range=[0.5, days_in_month + 0.5]
+                        )
+                    )
+                    # ホバー時の表示をカスタマイズ（小数点以下1桁、四捨五入）
+                    fig.update_traces(
+                        marker_line_width=0,
+                        hovertemplate='日付: %{x}日<br>損益額: %{y:.1f}万円<extra></extra>'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("選択された月のデータがありません。")
 
@@ -1676,6 +1808,40 @@ def show(selected_date):
                     total_pnl_amount_str = f"+{total_pnl_amount:,.0f}" if total_pnl_amount >= 0 else f"{total_pnl_amount:,.0f}"
 
                     st.info(f"**{selected_year}年 年間合計損益額: {total_pnl_amount_str}円**")
+                    
+                    # 棒グラフを表示
+                    chart_df = yearly_df.copy()
+                    chart_df['month_num'] = range(1, 13)
+                    chart_df['date'] = pd.to_datetime(f"{selected_year}-" + chart_df['month_num'].astype(str) + "-01")
+                    chart_df['_pnl_amount_value_man'] = chart_df['_pnl_amount_value'] / 10000  # 万円単位に変換
+                    
+                    fig = px.bar(
+                        chart_df,
+                        x='date',
+                        y='_pnl_amount_value_man',
+                        title=f"{selected_year}年 月別損益推移",
+                        labels={'_pnl_amount_value_man': '損益額（万円）', 'date': '月'},
+                        color='_pnl_amount_value_man',
+                        color_continuous_scale=['red', 'white', 'blue'],
+                        color_continuous_midpoint=0
+                    )
+                    fig.update_layout(
+                        height=400,
+                        showlegend=False,
+                        xaxis_title="月",
+                        yaxis_title="損益額（万円）",
+                        xaxis=dict(
+                            tickmode='array',
+                            tickvals=chart_df['date'],
+                            ticktext=[f"{i}月" for i in range(1, 13)]
+                        )
+                    )
+                    # ホバー時の表示をカスタマイズ（小数点以下1桁、四捨五入）
+                    fig.update_traces(
+                        marker_line_width=0,
+                        hovertemplate='月: %{x}<br>損益額: %{y:.1f}万円<extra></extra>'
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.info("選択された年のデータがありません。")
         
