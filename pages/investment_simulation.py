@@ -316,7 +316,20 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
     current_date = start_date
     previous_total_value = initial_total_value  # 前日の総資産価値を記録
 
+    # プログレスバー用の計算
+    total_days = (end_date - start_date).days + 1
+
+    # プログレスバーを初期化
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+
     while current_date <= end_date:
+        # 進捗を更新（現在の日付の位置で計算）
+        days_elapsed = (current_date - start_date).days + 1
+        progress = min(days_elapsed / total_days, 1.0)
+        progress_bar.progress(progress)
+        status_text.text(f"処理中: {current_date.strftime('%Y-%m-%d')} ({days_elapsed}/{total_days}日, {progress*100:.1f}%)")
+        
         # 土日をスキップ（市場が開いていない日）
         if current_date.weekday() >= 5:
             current_date += timedelta(days=1)
@@ -335,6 +348,9 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
             yesterday -= timedelta(days=1)
 
         is_trade_day = yesterday.weekday() in [1, 5]
+
+        # 取引コストを初期化（取引日の場合のみ使用）
+        total_trading_cost = 0
 
         if is_trade_day:
             vote_date_str = yesterday.strftime("%Y-%m-%d")
@@ -366,9 +382,6 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
 
                 # 総資産価値（すべて円換算）
                 total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
-
-                # 取引コストを考慮した総資産価値
-                total_trading_cost = 0
 
                 # --- 日本株の差分調整 ---
                 # 日本株の差分売買を実行
@@ -939,6 +952,11 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
         previous_total_value = daily_total_value
 
         current_date += timedelta(days=1)
+    
+    # プログレスバーを完了状態にする
+    progress_bar.progress(1.0)
+    final_days = (end_date - start_date).days + 1
+    status_text.text(f"完了: {end_date.strftime('%Y-%m-%d')} ({final_days}/{total_days}日, 100%)")
     
     return simulation_results, trade_history
 
