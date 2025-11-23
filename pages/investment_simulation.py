@@ -1057,203 +1057,28 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
     # データを日付でソート
     month_data.sort(key=lambda x: x['date'])
 
-    # 日別の損益を計算（実現損益 + 含み損益）
+    # calculate_pnl_breakdownを使用して損益を計算
+    pnl_breakdown = calculate_pnl_breakdown(simulation_results, trade_history)
+    
+    # 月次損益を計算
+    monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
+    
+    # 日別の損益データを準備
     daily_pnl_data = {}
-    
-    # 直前の営業日の実現損益・含み損益を保持（日次変化を計算するため）
-    prev_realized_pnl = 0
-    prev_unrealized_pnl = 0
-    
-    # 全シミュレーション結果をソート（直前の営業日を探すため）
-    all_results_sorted = sorted(simulation_results, key=lambda x: x['date'])
-    
-    # 月初日の直前の営業日の累積損益を計算
-    if month_data:
-        first_date = month_data[0]['date']
-        # 直前の営業日を探す
-        for prev_result in reversed(all_results_sorted):
-            if prev_result['date'] < first_date:
-                # 直前の営業日の累積実現損益・含み損益を計算
-                prev_date_str = prev_result['date'].strftime('%Y-%m-%d')
-                
-                # 累積実現損益を計算
-                for trade in trade_history:
-                    if trade['date'] <= prev_result['date'] and trade['action'] == '売却':
-                        buy_trade = None
-                        for buy in trade_history:
-                            if (buy['stock_code'] == trade['stock_code'] and
-                                buy['action'] == '購入' and
-                                buy['date'] < trade['date']):
-                                if buy_trade is None or buy['date'] > buy_trade['date']:
-                                    buy_trade = buy
-                        if buy_trade:
-                            pnl_per_share = trade['price'] - buy_trade['price']
-                            pnl_amount = pnl_per_share * trade['shares']
-                            if trade['currency'] == 'USD' and trade['exchange_rate']:
-                                pnl_amount *= trade['exchange_rate']
-                            prev_realized_pnl += pnl_amount
-                
-                # 累積含み損益を計算
-                prev_holdings = {}
-                for trade in trade_history:
-                    if trade['date'] <= prev_result['date']:
-                        stock_code = trade['stock_code']
-                        if stock_code not in prev_holdings:
-                            prev_holdings[stock_code] = {
-                                'total_shares': 0,
-                                'total_cost': 0,
-                                'currency': trade['currency']
-                            }
-                        if trade['action'] == '購入':
-                            prev_holdings[stock_code]['total_shares'] += trade['shares']
-                            cost = trade['price'] * trade['shares']
-                            if trade['currency'] == 'USD' and trade.get('exchange_rate'):
-                                cost *= trade['exchange_rate']
-                            prev_holdings[stock_code]['total_cost'] += cost
-                        elif trade['action'] == '売却':
-                            if prev_holdings[stock_code]['total_shares'] > 0:
-                                sell_ratio = trade['shares'] / prev_holdings[stock_code]['total_shares']
-                                prev_holdings[stock_code]['total_shares'] -= trade['shares']
-                                prev_holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
-                
-                for stock_code, holding in prev_holdings.items():
-                    if holding['total_shares'] > 0:
-                        current_price = get_stock_price_cached(stock_code, prev_date_str)
-                        if current_price is not None and current_price > 0:
-                            current_value = current_price * holding['total_shares']
-                            if holding['currency'] == 'USD' and prev_result.get('exchange_rate'):
-                                current_value *= prev_result['exchange_rate']
-                            prev_unrealized_pnl += current_value - holding['total_cost']
-                
-                break
-
-    # 指定月の全ての日付について処理
     for result in month_data:
         day = result['date'].day
-        date_str = result['date'].strftime('%Y-%m-%d')
-
-        # === 1. 実現損益の計算（累積値） ===
-        cumulative_realized_pnl = 0
-        realized_detail = []
-
-        # 当日以前の全売却取引から実現損益を計算
-        for trade in trade_history:
-            if trade['date'] <= result['date'] and trade['action'] == '売却':
-                # 対応する購入取引を探す（同じ銘柄で最も近い購入）
-                buy_trade = None
-                for buy in trade_history:
-                    if (buy['stock_code'] == trade['stock_code'] and
-                        buy['action'] == '購入' and
-                        buy['date'] < trade['date']):
-                        if buy_trade is None or buy['date'] > buy_trade['date']:
-                            buy_trade = buy
-
-                if buy_trade:
-                    pnl_per_share = trade['price'] - buy_trade['price']
-                    pnl_amount = pnl_per_share * trade['shares']
-
-                    # 円換算（米国株の場合）
-                    if trade['currency'] == 'USD' and trade['exchange_rate']:
-                        pnl_amount *= trade['exchange_rate']
-
-                    cumulative_realized_pnl += pnl_amount
-                    
-                    # 当日の売却取引のみ詳細に記録
-                    if (trade['date'].year == year and
-                        trade['date'].month == month and
-                        trade['date'].day == day):
-                        realized_detail.append({
-                            'stock_code': trade['stock_code'],
-                            'pnl': pnl_amount
-                        })
-
-        # === 2. 含み損益の計算（累積値） ===
-        cumulative_unrealized_pnl = 0
-        unrealized_detail = []
-
-        # 当日時点での保有銘柄の購入価格を計算（加重平均）
-        holdings = {}  # {stock_code: {'total_shares': X, 'total_cost': Y, 'currency': Z}}
-
-        # 当日以前の全取引履歴から保有状況を再構築
-        for trade in trade_history:
-            if trade['date'] <= result['date']:
-                stock_code = trade['stock_code']
-
-                if stock_code not in holdings:
-                    holdings[stock_code] = {
-                        'total_shares': 0,
-                        'total_cost': 0,
-                        'currency': trade['currency']
-                    }
-
-                if trade['action'] == '購入':
-                    # 購入：株数と総コストを加算
-                    holdings[stock_code]['total_shares'] += trade['shares']
-                    cost = trade['price'] * trade['shares']
-
-                    # 円換算で保存（米国株の場合）
-                    if trade['currency'] == 'USD' and trade.get('exchange_rate'):
-                        cost *= trade['exchange_rate']
-
-                    holdings[stock_code]['total_cost'] += cost
-
-                elif trade['action'] == '売却':
-                    # 売却：株数と総コストを比例配分で減算
-                    if holdings[stock_code]['total_shares'] > 0:
-                        sell_ratio = trade['shares'] / holdings[stock_code]['total_shares']
-                        holdings[stock_code]['total_shares'] -= trade['shares']
-                        holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
-
-        # 当日の保有銘柄について含み損益を計算
-        for stock_code, holding in holdings.items():
-            if holding['total_shares'] > 0:
-                # 現在価格を取得
-                current_price = get_stock_price_cached(stock_code, date_str)
-
-                if current_price is not None and current_price > 0:
-                    # 評価額を計算
-                    current_value = current_price * holding['total_shares']
-
-                    # 米国株の場合は円換算
-                    if holding['currency'] == 'USD' and result.get('exchange_rate'):
-                        current_value *= result['exchange_rate']
-
-                    # 含み損益 = 評価額 - 取得原価
-                    pnl = current_value - holding['total_cost']
-                    cumulative_unrealized_pnl += pnl
-                    unrealized_detail.append({
-                        'stock_code': stock_code,
-                        'pnl': pnl
-                    })
-
-        # === 3. 日次変化を計算 ===
-        # 実現損益の日次変化（当日の累積値 - 前日の累積値）
-        daily_realized_pnl_change = cumulative_realized_pnl - prev_realized_pnl
+        date_obj = result['date']
         
-        # 含み損益の日次変化（当日の累積値 - 前日の累積値）
-        daily_unrealized_pnl_change = cumulative_unrealized_pnl - prev_unrealized_pnl
-        
-        # 合計損益の日次変化
-        total_pnl_change = daily_realized_pnl_change + daily_unrealized_pnl_change
-
-        # 日次損益率を取得
-        daily_pnl_rate = result.get('daily_pnl_rate', 0)
-
-        daily_pnl_data[day] = {
-            'total_pnl': total_pnl_change,  # 日次変化
-            'realized_pnl': daily_realized_pnl_change,  # 日次変化
-            'unrealized_pnl': daily_unrealized_pnl_change,  # 日次変化
-            'realized_detail': realized_detail,
-            'unrealized_detail': unrealized_detail,
-            'daily_pnl_rate': daily_pnl_rate,
-            # 累積値も保持（次の日の計算のため）
-            '_cumulative_realized_pnl': cumulative_realized_pnl,
-            '_cumulative_unrealized_pnl': cumulative_unrealized_pnl
-        }
-        
-        # 次の日のために前日の累積値を更新
-        prev_realized_pnl = cumulative_realized_pnl
-        prev_unrealized_pnl = cumulative_unrealized_pnl
+        if date_obj in pnl_breakdown:
+            pnl_data = pnl_breakdown[date_obj]
+            daily_pnl_data[day] = {
+                'total_pnl': pnl_data['total_pnl'],
+                'realized_pnl': pnl_data['realized_pnl'],
+                'unrealized_pnl': pnl_data['unrealized_pnl'],
+                'realized_detail': pnl_data.get('realized_detail', []),
+                'unrealized_detail': pnl_data.get('unrealized_detail', []),
+                'daily_pnl_rate': pnl_data.get('daily_pnl_rate', 0)
+            }
 
     # 月次損益を計算
     monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
@@ -1970,44 +1795,77 @@ def show(selected_date):
                 else:
                     trade_summary[stock_code]['sell_trades'].append(trade)
             
-            # 銘柄毎の損益を計算（簡易版）
+            # 銘柄毎の損益を計算（平均取得単価法を使用）
             detailed_trades = []
             for stock_code, summary in trade_summary.items():
                 # 購入と売却を時系列でソート
                 buy_trades = sorted(summary['buy_trades'], key=lambda x: x['date'])
                 sell_trades = sorted(summary['sell_trades'], key=lambda x: x['date'])
                 
-                # 購入と売却を1対1でペアリング
-                for i, sell_trade in enumerate(sell_trades):
-                    if i < len(buy_trades):
-                        buy_trade = buy_trades[i]
-                        
-                        # 損益を計算
-                        pnl_per_share = sell_trade['price'] - buy_trade['price']
-                        pnl_amount = pnl_per_share * sell_trade['shares']
-                        pnl_rate = (pnl_per_share / buy_trade['price']) * 100 if buy_trade['price'] > 0 else 0
-                        
-                        # 円換算の損益（米国株の場合）
-                        currency = buy_trade['currency']
-                        exchange_rate = buy_trade['exchange_rate']
-                        if currency == 'USD' and exchange_rate:
-                            pnl_amount_jpy = pnl_amount * exchange_rate
-                        else:
-                            pnl_amount_jpy = pnl_amount
-                        
-                        detailed_trades.append({
-                            '購入日': buy_trade['date'].strftime('%Y-%m-%d'),
-                            '売却日': sell_trade['date'].strftime('%Y-%m-%d'),
-                            '銘柄コード': stock_code,
-                            '銘柄名': summary['stock_name'],
-                            '通貨': currency,
-                            '株数': sell_trade['shares'],
-                            '購入価格': buy_trade['price'],
-                            '売却価格': sell_trade['price'],
-                            '損益額': pnl_amount,
-                            '損益率(%)': round(pnl_rate, 2),
-                            '損益額(円)': round(pnl_amount_jpy, 0) if currency == 'USD' else round(pnl_amount, 0)
-                        })
+                # 平均取得単価法で損益を計算
+                # 保有状況を追跡
+                holding = {'shares': 0, 'total_cost': 0}
+                
+                # 全取引を時系列で処理
+                all_trades = []
+                for trade in buy_trades:
+                    all_trades.append(('buy', trade))
+                for trade in sell_trades:
+                    all_trades.append(('sell', trade))
+                all_trades.sort(key=lambda x: x[1]['date'])
+                
+                for trade_type, trade in all_trades:
+                    if trade_type == 'buy':
+                        # 購入：株数と総コストを加算
+                        holding['shares'] += trade['shares']
+                        cost = trade['price'] * trade['shares']
+                        if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                            cost *= trade['exchange_rate']
+                        holding['total_cost'] += cost
+                    
+                    elif trade_type == 'sell':
+                        if holding['shares'] > 0:
+                            # 平均取得単価を計算
+                            avg_cost_per_share = holding['total_cost'] / holding['shares']
+                            
+                            # 売却額を計算
+                            sell_value = trade['price'] * trade['shares']
+                            if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                                sell_value_jpy = sell_value * trade['exchange_rate']
+                            else:
+                                sell_value_jpy = sell_value
+                            
+                            # 実現損益を計算（円ベース）
+                            cost_basis = avg_cost_per_share * trade['shares']
+                            pnl_amount_jpy = sell_value_jpy - cost_basis
+                            
+                            # 元の通貨での損益額と損益率
+                            if trade['currency'] == 'USD':
+                                pnl_amount = pnl_amount_jpy / trade['exchange_rate'] if trade.get('exchange_rate') else 0
+                                avg_cost_usd = avg_cost_per_share / trade['exchange_rate'] if trade.get('exchange_rate') else 0
+                                pnl_rate = ((trade['price'] - avg_cost_usd) / avg_cost_usd) * 100 if avg_cost_usd > 0 else 0
+                            else:
+                                pnl_amount = pnl_amount_jpy
+                                pnl_rate = ((trade['price'] - avg_cost_per_share) / avg_cost_per_share) * 100 if avg_cost_per_share > 0 else 0
+                            
+                            detailed_trades.append({
+                                '購入日': '複数' if len([t for t in buy_trades if t['date'] <= trade['date']]) > 1 else buy_trades[0]['date'].strftime('%Y-%m-%d'),
+                                '売却日': trade['date'].strftime('%Y-%m-%d'),
+                                '銘柄コード': stock_code,
+                                '銘柄名': summary['stock_name'],
+                                '通貨': trade['currency'],
+                                '株数': trade['shares'],
+                                '平均取得単価': round(avg_cost_per_share / trade['exchange_rate'], 2) if trade['currency'] == 'USD' and trade.get('exchange_rate') else round(avg_cost_per_share, 2),
+                                '売却価格': trade['price'],
+                                '損益額': round(pnl_amount, 2),
+                                '損益率(%)': round(pnl_rate, 2),
+                                '損益額(円)': round(pnl_amount_jpy, 0)
+                            })
+                            
+                            # 保有状況を更新（比例配分で減少）
+                            sell_ratio = trade['shares'] / holding['shares']
+                            holding['shares'] -= trade['shares']
+                            holding['total_cost'] *= (1 - sell_ratio)
             
             if detailed_trades:
                 df_trades = pd.DataFrame(detailed_trades)
@@ -2086,120 +1944,39 @@ def show(selected_date):
         # 損益詳細テーブル
         st.subheader("損益詳細")
 
-        # 損益詳細データを作成（カレンダー表示と同じロジック）
-        pnl_detail_data = []
+        # calculate_pnl_breakdownを使用して損益詳細データを取得
+        pnl_breakdown = calculate_pnl_breakdown(simulation_results, st.session_state.trade_history)
         
-        # 直前の営業日の実現損益・含み損益を保持（日次変化を計算するため）
-        prev_realized_pnl = 0
-        prev_unrealized_pnl = 0
-
+        pnl_detail_data = []
         for result in simulation_results:
             result_date = result['date']
             date_str = result_date.strftime('%Y-%m-%d')
-
-            # === 実現損益の計算（累積値） ===
-            cumulative_realized_pnl = 0
-            realized_trades = []
-
-            # 当日以前の全売却取引から実現損益を計算
-            for trade in st.session_state.trade_history:
-                if trade['date'] <= result_date and trade['action'] == '売却':
-                    # 対応する購入取引を探す
-                    buy_trade = None
-                    for buy in st.session_state.trade_history:
-                        if (buy['stock_code'] == trade['stock_code'] and
-                            buy['action'] == '購入' and
-                            buy['date'] < trade['date']):
-                            if buy_trade is None or buy['date'] > buy_trade['date']:
-                                buy_trade = buy
-
-                    if buy_trade:
-                        pnl_per_share = trade['price'] - buy_trade['price']
-                        pnl_amount = pnl_per_share * trade['shares']
-
-                        # 円換算（米国株の場合）
-                        if trade['currency'] == 'USD' and trade['exchange_rate']:
-                            pnl_amount *= trade['exchange_rate']
-
-                        cumulative_realized_pnl += pnl_amount
-                        
-                        # 当日の売却取引のみ詳細に記録
-                        if trade['date'] == result_date:
-                            realized_trades.append(f"{trade['stock_code']}:{pnl_amount/10000:.1f}万")
-
-            # === 含み損益の計算（累積値） ===
-            cumulative_unrealized_pnl = 0
-            holdings = {}
-
-            # 当日以前の全取引履歴から保有状況を再構築
-            for trade in st.session_state.trade_history:
-                if trade['date'] <= result_date:
-                    stock_code = trade['stock_code']
-
-                    if stock_code not in holdings:
-                        holdings[stock_code] = {
-                            'total_shares': 0,
-                            'total_cost': 0,
-                            'currency': trade['currency']
-                        }
-
-                    if trade['action'] == '購入':
-                        holdings[stock_code]['total_shares'] += trade['shares']
-                        cost = trade['price'] * trade['shares']
-
-                        if trade['currency'] == 'USD' and trade.get('exchange_rate'):
-                            cost *= trade['exchange_rate']
-
-                        holdings[stock_code]['total_cost'] += cost
-
-                    elif trade['action'] == '売却':
-                        if holdings[stock_code]['total_shares'] > 0:
-                            sell_ratio = trade['shares'] / holdings[stock_code]['total_shares']
-                            holdings[stock_code]['total_shares'] -= trade['shares']
-                            holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
-
-            # 含み損益を計算
-            unrealized_holdings = []
-            for stock_code, holding in holdings.items():
-                if holding['total_shares'] > 0:
-                    current_price = get_stock_price_cached(stock_code, date_str)
-
-                    if current_price is not None and current_price > 0:
-                        current_value = current_price * holding['total_shares']
-
-                        if holding['currency'] == 'USD' and result.get('exchange_rate'):
-                            current_value *= result['exchange_rate']
-
-                        pnl = current_value - holding['total_cost']
-                        cumulative_unrealized_pnl += pnl
-                        unrealized_holdings.append(f"{stock_code}:{pnl/10000:.1f}万")
-
-            # === 日次変化を計算 ===
-            # 実現損益の日次変化（当日の累積値 - 前日の累積値）
-            daily_realized_pnl_change = cumulative_realized_pnl - prev_realized_pnl
             
-            # 含み損益の日次変化（当日の累積値 - 前日の累積値）
-            daily_unrealized_pnl_change = cumulative_unrealized_pnl - prev_unrealized_pnl
-            
-            # 合計損益の日次変化
-            total_pnl_change = daily_realized_pnl_change + daily_unrealized_pnl_change
-
-            pnl_detail_data.append({
-                '日付': date_str,
-                '曜日': ['月', '火', '水', '木', '金', '土', '日'][result_date.weekday()],
-                '合計損益（万円）': f"{total_pnl_change/10000:+,.1f}",
-                '実現損益（万円）': f"{daily_realized_pnl_change/10000:+,.1f}",
-                '含み損益（万円）': f"{daily_unrealized_pnl_change/10000:+,.1f}",
-                '日次損益率（%）': f"{result.get('daily_pnl_rate', 0):.2f}",
-                'ポートフォリオ価値（万円）': f"{result['total_value']/10000:,.1f}",
-                '実現損益詳細': '|'.join(realized_trades) if realized_trades else '-',
-                '含み損益詳細': '|'.join(unrealized_holdings) if unrealized_holdings else '-'
-            })
-            
-            # 次の日のために前日の累積値を更新
-            prev_realized_pnl = cumulative_realized_pnl
-            prev_unrealized_pnl = cumulative_unrealized_pnl
-
+            if result_date in pnl_breakdown:
+                pnl_data = pnl_breakdown[result_date]
+                
+                # 実現損益詳細を整形
+                realized_trades_str = []
+                for detail in pnl_data.get('realized_detail', []):
+                    realized_trades_str.append(f"{detail['stock_code']}:{detail['pnl']/10000:.1f}万")
+                
+                # 含み損益詳細を整形
+                unrealized_holdings_str = []
+                for detail in pnl_data.get('unrealized_detail', []):
+                    unrealized_holdings_str.append(f"{detail['stock_code']}:{detail['pnl']/10000:.1f}万")
+                
+                pnl_detail_data.append({
+                    '日付': date_str,
+                    '曜日': ['月', '火', '水', '木', '金', '土', '日'][result_date.weekday()],
+                    '合計損益（万円）': f"{pnl_data['total_pnl']/10000:+,.1f}",
+                    '実現損益（万円）': f"{pnl_data['realized_pnl']/10000:+,.1f}",
+                    '含み損益（万円）': f"{pnl_data['unrealized_pnl']/10000:+,.1f}",
+                    '日次損益率（%）': f"{pnl_data.get('daily_pnl_rate', 0):.2f}",
+                    'ポートフォリオ価値（万円）': f"{result['total_value']/10000:,.1f}",
+                    '実現損益詳細': '|'.join(realized_trades_str) if realized_trades_str else '-',
+                    '含み損益詳細': '|'.join(unrealized_holdings_str) if unrealized_holdings_str else '-'
+                })
+        
         pnl_df = pd.DataFrame(pnl_detail_data)
         st.dataframe(pnl_df, use_container_width=True)
 
@@ -2211,3 +1988,126 @@ def show(selected_date):
             file_name=f"pnl_detail_{start_date.strftime('%Y%m%d')}.csv",
             mime='text/csv',
         )
+
+def calculate_pnl_breakdown(simulation_results, trade_history):
+    """
+    シミュレーション結果と取引履歴から、日別の実現損益・含み損益の内訳を計算する。
+    実現損益は「平均取得単価」法を用いて計算する。
+    
+    Args:
+        simulation_results (list): シミュレーション結果のリスト
+        trade_history (list): 取引履歴のリスト
+        
+    Returns:
+        dict: {date_obj: {
+            'total_pnl': float,
+            'realized_pnl': float,
+            'unrealized_pnl': float,
+            'realized_detail': list,
+            'unrealized_detail': list,
+            'daily_pnl_rate': float
+        }}
+    """
+    daily_pnl_data = {}
+    
+    # 日付順にソート
+    sorted_results = sorted(simulation_results, key=lambda x: x['date'])
+    sorted_trades = sorted(trade_history, key=lambda x: x['date'])
+    
+    # 状態管理用変数
+    holdings = {} # {stock_code: {'shares': 0, 'total_cost': 0, 'currency': 'JPY'/'USD'}}
+    cumulative_realized_pnl = 0
+    
+    # 前日の累積値を保持
+    prev_realized_pnl = 0
+    prev_unrealized_pnl = 0
+    
+    trade_idx = 0
+    
+    for result in sorted_results:
+        date_current = result['date']
+        date_str = date_current.strftime('%Y-%m-%d')
+        
+        realized_detail = []
+        
+        # 当日（またはそれ以前）の取引を処理
+        while trade_idx < len(sorted_trades) and sorted_trades[trade_idx]['date'] <= date_current:
+            trade = sorted_trades[trade_idx]
+            stock_code = trade['stock_code']
+            
+            if stock_code not in holdings:
+                holdings[stock_code] = {'shares': 0, 'total_cost': 0, 'currency': trade['currency']}
+            
+            if trade['action'] == '購入':
+                # 平均取得単価の計算のためにコストを加算
+                holdings[stock_code]['shares'] += trade['shares']
+                cost = trade['price'] * trade['shares']
+                if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                    cost *= trade['exchange_rate']
+                holdings[stock_code]['total_cost'] += cost
+                
+            elif trade['action'] == '売却':
+                if holdings[stock_code]['shares'] > 0:
+                    # 平均取得単価を計算
+                    avg_cost = holdings[stock_code]['total_cost'] / holdings[stock_code]['shares']
+                    
+                    # 実現損益を計算: (売却額 - 平均コスト * 売却株数)
+                    sell_value = trade['price'] * trade['shares']
+                    if trade['currency'] == 'USD' and trade.get('exchange_rate'):
+                        sell_value *= trade['exchange_rate']
+                    
+                    pnl = sell_value - (avg_cost * trade['shares'])
+                    cumulative_realized_pnl += pnl
+                    
+                    # 詳細を記録
+                    if trade['date'] == date_current:
+                        realized_detail.append({
+                            'stock_code': stock_code,
+                            'pnl': pnl
+                        })
+                    
+                    # 保有状況を更新（比例配分で減少）
+                    sell_ratio = trade['shares'] / holdings[stock_code]['shares']
+                    holdings[stock_code]['shares'] -= trade['shares']
+                    holdings[stock_code]['total_cost'] *= (1 - sell_ratio)
+            
+            trade_idx += 1
+            
+        # 含み損益の計算
+        cumulative_unrealized_pnl = 0
+        unrealized_detail = []
+        
+        for stock_code, holding in holdings.items():
+            if holding['shares'] > 0:
+                price = get_stock_price_cached(stock_code, date_str)
+                if price is not None and price > 0:
+                    current_value = price * holding['shares']
+                    if holding['currency'] == 'USD' and result.get('exchange_rate'):
+                        current_value *= result['exchange_rate']
+                    
+                    pnl = current_value - holding['total_cost']
+                    cumulative_unrealized_pnl += pnl
+                    
+                    unrealized_detail.append({
+                        'stock_code': stock_code,
+                        'pnl': pnl
+                    })
+        
+        # 日次変化を計算
+        daily_realized = cumulative_realized_pnl - prev_realized_pnl
+        daily_unrealized = cumulative_unrealized_pnl - prev_unrealized_pnl
+        total_change = daily_realized + daily_unrealized
+        
+        daily_pnl_data[date_current] = {
+            'total_pnl': total_change,
+            'realized_pnl': daily_realized,
+            'unrealized_pnl': daily_unrealized,
+            'realized_detail': realized_detail,
+            'unrealized_detail': unrealized_detail,
+            'daily_pnl_rate': result.get('daily_pnl_rate', 0)
+        }
+        
+        prev_realized_pnl = cumulative_realized_pnl
+        prev_unrealized_pnl = cumulative_unrealized_pnl
+        
+    return daily_pnl_data
