@@ -415,7 +415,6 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                 usd_portfolio_value = calculate_portfolio_value(usd_portfolio, current_usd_prices, exchange_rate)
 
                 # 総資産価値（すべて円換算）
-                total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
 
                 # --- 日本株の差分調整 ---
                 # 日本株の差分売買を実行
