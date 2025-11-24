@@ -310,7 +310,7 @@ def calculate_portfolio_value(portfolio, current_prices, exchange_rate=None):
             stock_value = shares * price
             
             # 米国株の場合は円換算
-            if not stock_code[0].isdigit() and exchange_rate is not None:
+            if stock_code and not stock_code[0].isdigit() and exchange_rate is not None:
                 # 異常な為替レートをチェック
                 if exchange_rate <= 0 or exchange_rate > 1000:  # 0以下または1000を超える場合は無効
                     continue
