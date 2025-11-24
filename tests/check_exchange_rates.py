@@ -30,7 +30,7 @@ def check_rates():
                 close_series = df['Close']['USDJPY=X']
             except KeyError:
                  # Fallback if structure is different
-                 close_series = df.iloc[:, 0] # Take first column
+                close_series = df.iloc[:, 0] # Take first column
         else:
             if 'Close' in df.columns:
                 close_series = df['Close']
