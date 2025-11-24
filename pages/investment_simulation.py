@@ -235,32 +235,34 @@ def get_latest_vote_date(trade_date):
 def get_vote_results_for_date_separated(vote_date):
     """指定日の投票結果を日本株と米国株に分けて取得"""
     conn = get_connection()
-    cursor = conn.cursor()
-    
-    # 全投票結果を取得
-    cursor.execute("""
-        SELECT stock_code, COUNT(*) as vote_count
-        FROM vote
-        WHERE vote_date = ?
-        GROUP BY stock_code
-        ORDER BY vote_count DESC
-    """, (vote_date,))
-    
-    all_results = cursor.fetchall()
-    conn.close()
-    
-    # 日本株と米国株に分ける
-    jpy_stocks = []
-    usd_stocks = []
-    
-    for stock_code, vote_count in all_results:
-        if stock_code[0].isdigit():  # 日本株
-            jpy_stocks.append((stock_code, vote_count))
-        else:  # 米国株
-            usd_stocks.append((stock_code, vote_count))
-    
-    # それぞれのベスト10を返す
-    return jpy_stocks[:10], usd_stocks[:10]
+    try:
+        cursor = conn.cursor()
+        
+        # 全投票結果を取得
+        cursor.execute("""
+            SELECT stock_code, COUNT(*) as vote_count
+            FROM vote
+            WHERE vote_date = ?
+            GROUP BY stock_code
+            ORDER BY vote_count DESC
+        """, (vote_date,))
+        
+        all_results = cursor.fetchall()
+        
+        # 日本株と米国株に分ける
+        jpy_stocks = []
+        usd_stocks = []
+        
+        for stock_code, vote_count in all_results:
+            if stock_code[0].isdigit():  # 日本株
+                jpy_stocks.append((stock_code, vote_count))
+            else:  # 米国株
+                usd_stocks.append((stock_code, vote_count))
+        
+        # それぞれのベスト10を返す
+        return jpy_stocks[:10], usd_stocks[:10]
+    finally:
+        conn.close()
 
 def get_vote_results_for_date(vote_date):
     """指定日の投票結果を取得"""
