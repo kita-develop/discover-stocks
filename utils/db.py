@@ -90,6 +90,7 @@ def init_price_cache_table():
                 PRIMARY KEY (stock_code, date)
             )
         """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_cache_updated_at ON price_cache (updated_at);")
         conn.commit()
     finally:
         conn.close()

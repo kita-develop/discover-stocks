@@ -260,9 +260,9 @@ def get_vote_results_for_date_separated(vote_date):
         usd_stocks = []
         
         for stock_code, vote_count in all_results:
-            if stock_code[0].isdigit():  # 日本株
+            if stock_code and stock_code[0].isdigit():  # 日本株
                 jpy_stocks.append((stock_code, vote_count))
-            else:  # 米国株
+            elif stock_code:  # 米国株
                 usd_stocks.append((stock_code, vote_count))
         
         # それぞれのベスト10を返す
