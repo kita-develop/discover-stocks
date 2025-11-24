@@ -17,11 +17,7 @@ st.write = print
 # Import necessary modules from the app
 try:
     from pages.investment_simulation import (
-        get_exchange_rate, get_stock_price_cached, get_latest_vote_date,
-        get_vote_results_for_date_separated, calculate_trading_cost,
-        calculate_portfolio_value, get_stock_name, TRADING_COSTS,
-        DEFAULT_ALLOCATION, simulate_investment, calculate_monthly_pnl,
-        calculate_pnl_breakdown # Import the new helper function
+        simulate_investment, calculate_monthly_pnl, calculate_pnl_breakdown
     )
 except ImportError:
     print("Import failed.")
