@@ -21,6 +21,10 @@ TRADING_COSTS = {
     'spread_rate': 0.0002       # 0.02%のスプレッド
 }
 
+# リスクフリーレート（シャープレシオ計算用）
+# 日本の10年国債利回りを想定。市場環境に応じて調整が必要
+RISK_FREE_RATE = 0.02  # 2%
+
 def get_price_from_cache(stock_code, date_str):
     """
     キャッシュから株価を取得
@@ -499,11 +503,6 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     if price is not None:
                         current_usd_prices[stock_code] = price
                 
-                # 現在のポートフォリオ価値を計算（円換算）
-                jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, current_jpy_prices)
-
-                # 総資産価値（すべて円換算）
-
                 # --- 日本株の差分調整 ---
                 # 日本株の差分売買を実行
                 jpy_cash_from_sales = 0
@@ -1278,9 +1277,8 @@ def calculate_risk_metrics(simulation_results):
     daily_volatility = np.std(daily_returns)
     annual_volatility = daily_volatility * np.sqrt(365)
     
-    # シャープレシオ（リスクフリーレートを2%と仮定）
-    risk_free_rate = 0.02
-    sharpe_ratio = (annual_return - risk_free_rate) / annual_volatility if annual_volatility > 0 else 0
+    # シャープレシオ
+    sharpe_ratio = (annual_return - RISK_FREE_RATE) / annual_volatility if annual_volatility > 0 else 0
     
     # 最大ドローダウン
     peak = values[0]
