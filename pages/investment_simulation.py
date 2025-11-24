@@ -501,7 +501,6 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                 
                 # 現在のポートフォリオ価値を計算（円換算）
                 jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, current_jpy_prices)
-                usd_portfolio_value = calculate_portfolio_value(usd_portfolio, current_usd_prices, exchange_rate)
 
                 # 総資産価値（すべて円換算）
 
