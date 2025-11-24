@@ -1093,7 +1093,6 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
     monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
 
     # カレンダーのHTMLを作成
-    month_name = calendar.month_name[month]
     title = f"{year}年{month}月"
 
     # 月次損益情報を追加
