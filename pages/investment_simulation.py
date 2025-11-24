@@ -272,8 +272,9 @@ def get_vote_results_for_date_separated(vote_date):
 
 def get_vote_results_for_date(vote_date):
     """指定日の投票結果を取得"""
-    conn = get_connection()
+    conn = None
     try:
+        conn = get_connection()
         cursor = conn.cursor()
         
         cursor.execute("""
@@ -285,11 +286,10 @@ def get_vote_results_for_date(vote_date):
             LIMIT 10
         """, (vote_date,))
         
-        results = cursor.fetchall()
-    
-        return results
+        return cursor.fetchall()
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 def calculate_trading_cost(trade_value, costs=TRADING_COSTS):
     """取引コストを計算"""
