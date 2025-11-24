@@ -25,12 +25,12 @@ def get_price_from_cache(stock_code, date_str):
     """
     キャッシュから株価を取得
 
-    Parameters:
-    stock_code (str): 銘柄コード（為替の場合は'USDJPY=X'）
-    date_str (str): 日付（YYYY-MM-DD形式）
+    引数:
+        stock_code (str): 銘柄コード（為替の場合は'USDJPY=X'）
+        date_str (str): 日付（例: 'YYYY-MM-DD' 形式）
 
-    Returns:
-    float: 株価 または None
+    戻り値:
+        float: 株価、または該当データがない場合は None
     """
     conn = None
     try:
