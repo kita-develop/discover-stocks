@@ -467,13 +467,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     # 最初の取引
                     temp_jpy_investment_value = initial_jpy  # 円
                 else:
-                    temp_total_value = temp_jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
-                    
-                    # 異常な価値の場合は初期投資額を使用
-                    if temp_total_value > initial_total_value * 50:
-                        temp_jpy_investment_value = initial_jpy
-                    else:
-                        temp_jpy_investment_value = temp_jpy_portfolio_value + jpy_cash  # 円
+                    temp_jpy_investment_value = temp_jpy_portfolio_value + jpy_cash  # 円
 
                 # 暫定の目標ポートフォリオを計算
                 temp_target_jpy_portfolio = {}
@@ -524,19 +518,11 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                             if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
                                 final_jpy_portfolio_value -= shares_to_sell * current_jpy_prices[stock_code]
                     
-                    # 総資産価値を再計算（すべての売却後の価値）
-                    final_total_value = final_jpy_portfolio_value + final_jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
-                    
-                    # 異常な価値の場合は初期投資額を使用
-                    if final_total_value > initial_total_value * 50:
-                        jpy_investment_value = initial_jpy
-                        usd_investment_value_usd = initial_usd / initial_exchange_rate
-                    else:
-                        # すべての売却後のポートフォリオ価値に基づいて日本株と米国株の資金を配分
-                        jpy_investment_value = final_jpy_portfolio_value + final_jpy_cash  # 円
-                        # 米国株の価値をドルで計算
-                        usd_portfolio_value_usd = calculate_portfolio_value(usd_portfolio, current_usd_prices)  # ドル建て
-                        usd_investment_value_usd = usd_portfolio_value_usd + usd_cash  # ドル
+                    # すべての売却後のポートフォリオ価値に基づいて日本株と米国株の資金を配分
+                    jpy_investment_value = final_jpy_portfolio_value + final_jpy_cash  # 円
+                    # 米国株の価値をドルで計算
+                    usd_portfolio_value_usd = calculate_portfolio_value(usd_portfolio, current_usd_prices)  # ドル建て
+                    usd_investment_value_usd = usd_portfolio_value_usd + usd_cash  # ドル
 
                 # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
                 target_jpy_portfolio = {}
@@ -715,16 +701,8 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     # 最初の取引
                     usd_investment_value_usd = usd_cash  # ドル
                 else:
-                    # 既存のポートフォリオがある場合
-                    # 総資産価値を再計算（売却後の価値）
-                    temp_total_value = jpy_portfolio_value + jpy_cash + (temp_usd_portfolio_value_usd * exchange_rate) + (usd_cash * exchange_rate if exchange_rate else 0)
-                    
-                    # 異常な価値の場合は初期投資額を使用
-                    if temp_total_value > initial_total_value * 50:
-                        usd_investment_value_usd = initial_usd / initial_exchange_rate
-                    else:
-                        # 売却後のポートフォリオ価値に基づいて米国株の資金を配分（ドル建て）
-                        usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
+                    # 売却後のポートフォリオ価値に基づいて米国株の資金を配分（ドル建て）
+                    usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
 
                 # 2. 保有銘柄の調整を事前に計算（減額が必要な場合の売却額を把握）
                 # まず、現在のポートフォリオ価値と現金から投資額を計算（暫定）
@@ -733,13 +711,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     # 最初の取引
                     temp_usd_investment_value_usd = initial_usd / initial_exchange_rate  # ドル
                 else:
-                    temp_total_value = jpy_portfolio_value + jpy_cash + (temp_usd_portfolio_value_usd * exchange_rate) + (usd_cash * exchange_rate if exchange_rate else 0)
-                    
-                    # 異常な価値の場合は初期投資額を使用
-                    if temp_total_value > initial_total_value * 50:
-                        temp_usd_investment_value_usd = initial_usd / initial_exchange_rate
-                    else:
-                        temp_usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
+                    temp_usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
 
                 # 暫定の目標ポートフォリオを計算
                 temp_target_usd_portfolio = {}
@@ -789,15 +761,8 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                             if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
                                 final_usd_portfolio_value_usd -= shares_to_sell * current_usd_prices[stock_code]
                     
-                    # 総資産価値を再計算（すべての売却後の価値）
-                    final_total_value = jpy_portfolio_value + jpy_cash + (final_usd_portfolio_value_usd * exchange_rate) + (final_usd_cash * exchange_rate if exchange_rate else 0)
-                    
-                    # 異常な価値の場合は初期投資額を使用
-                    if final_total_value > initial_total_value * 50:
-                        usd_investment_value_usd = initial_usd / initial_exchange_rate
-                    else:
-                        # すべての売却後のポートフォリオ価値に基づいて米国株の資金を配分（ドル建て）
-                        usd_investment_value_usd = final_usd_portfolio_value_usd + final_usd_cash  # ドル
+                    # すべての売却後のポートフォリオ価値に基づいて米国株の資金を配分（ドル建て）
+                    usd_investment_value_usd = final_usd_portfolio_value_usd + final_usd_cash  # ドル
 
                 # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
                 target_usd_portfolio = {}
