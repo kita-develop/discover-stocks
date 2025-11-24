@@ -192,7 +192,7 @@ def get_stock_price_cached(stock_code, target_date):
 
             # 3. 取得した値をDBキャッシュに保存
             # 通貨を判定（日本株かどうか）
-            currency = 'JPY' if stock_code[0].isdigit() else 'USD'
+            currency = 'JPY' if stock_code and stock_code[0].isdigit() else 'USD'
             save_price_to_cache(stock_code, target_date, price, currency)
 
             return price
