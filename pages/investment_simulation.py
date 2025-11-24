@@ -422,12 +422,6 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                 jpy_cash_for_purchases = 0
 
                 # まず、売却が必要な銘柄を特定
-                stocks_to_sell = {}
-                for stock_code, current_shares in jpy_portfolio.items():
-                    # 目標ポートフォリオにはまだ計算していないので、一旦全売却候補として記録
-                    # 実際の売却判断は、投票結果を確認後に行う
-                    stocks_to_sell[stock_code] = current_shares
-
                 # 1. 売却が必要な銘柄を処理（投票結果に含まれない銘柄を全売却）
                 temp_jpy_portfolio = jpy_portfolio.copy()
                 for stock_code, current_shares in jpy_portfolio.items():
