@@ -1065,11 +1065,11 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
                 'daily_pnl_rate': pnl_data.get('daily_pnl_rate', 0)
             }
 
-    # 月次損益を計算
-    monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
-
     # カレンダーのHTMLを作成
     title = f"{year}年{month}月"
+
+    # 月次損益を計算
+    monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
 
     # 月次損益情報を追加
     if monthly_pnl:
