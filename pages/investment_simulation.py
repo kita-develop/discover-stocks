@@ -1070,7 +1070,7 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
     pnl_breakdown = calculate_pnl_breakdown(simulation_results, trade_history)
     
     # 月次損益を計算
-    monthly_pnl = calculate_monthly_pnl(simulation_results, year, month)
+    
     
     # 日別の損益データを準備
     daily_pnl_data = {}
