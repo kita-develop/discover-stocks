@@ -80,7 +80,7 @@ def save_price_to_cache(stock_code, date_str, price, currency):
         conn.commit()
 
     except Exception as e:
-        pass  # エラーが発生してもキャッシュ保存の失敗は無視
+        st.error(f"Failed to save price to cache for {stock_code} on {date_str}: {e}")
     finally:
         if conn is not None:
             conn.close()
