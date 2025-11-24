@@ -10,7 +10,6 @@ import calendar
 from utils.db import get_connection, init_price_cache_table
 from utils.common import get_stock_name, get_ticker
 from functools import lru_cache
-import json
 
 # デフォルトの投資配分比率
 DEFAULT_ALLOCATION = [25, 20, 15, 10, 5, 5, 5, 5, 5, 5]
