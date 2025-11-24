@@ -985,6 +985,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
     
     return simulation_results, trade_history
 
+@st.cache_data(max_entries=20, ttl=3600)
 def calculate_monthly_pnl(simulation_results, year, month):
     """
     指定月の月次損益を計算
@@ -1200,6 +1201,7 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
 
     return html, chart_data
 
+@st.cache_data(max_entries=20, ttl=3600)
 def create_yearly_summary(simulation_results, year):
     """
     指定年の月別損益サマリーを作成
@@ -1989,6 +1991,7 @@ def show(selected_date):
             mime='text/csv',
         )
 
+@st.cache_data(max_entries=20, ttl=3600)
 def calculate_pnl_breakdown(simulation_results, trade_history):
     """
     シミュレーション結果と取引履歴から、日別の実現損益・含み損益の内訳を計算する。
