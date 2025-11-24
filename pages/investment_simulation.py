@@ -324,6 +324,87 @@ def calculate_portfolio_value(portfolio, current_prices, exchange_rate=None):
     
     return total_value
 
+def calculate_target_portfolio(stocks, allocation_ratios, investment_value, trade_date_str):
+    """
+    目標ポートフォリオを計算
+    
+    Args:
+        stocks: [(stock_code, vote_count), ...] の形式の株式リスト
+        allocation_ratios: 各銘柄の配分比率のリスト（%）
+        investment_value: 投資額（円またはドル）
+        trade_date_str: 取引日（株価取得用）
+    
+    Returns:
+        dict: {stock_code: target_shares, ...} の形式の目標ポートフォリオ
+    """
+    target_portfolio = {}
+    
+    for i, (stock_code, vote_count) in enumerate(stocks):
+        if i < len(allocation_ratios):
+            allocation_ratio = allocation_ratios[i] / 100.0
+            target_value = investment_value * allocation_ratio
+            
+            price = get_stock_price_cached(stock_code, trade_date_str)
+            if price is not None and price > 0:
+                trading_cost = calculate_trading_cost(target_value)
+                net_value = target_value - trading_cost
+                target_shares = int(net_value / price)
+                
+                if target_shares > 0:
+                    target_portfolio[stock_code] = target_shares
+    
+    return target_portfolio
+
+def calculate_required_sale_proceeds(current_portfolio, target_portfolio, current_prices):
+    """
+    減額売却が必要な場合の売却額を計算
+    
+    Args:
+        current_portfolio: 現在のポートフォリオ {stock_code: shares, ...}
+        target_portfolio: 目標ポートフォリオ {stock_code: shares, ...}
+        current_prices: 現在の株価 {stock_code: price, ...}
+    
+    Returns:
+        float: 売却による純現金増加額（取引コスト控除後）
+    """
+    total_proceeds = 0
+    
+    for stock_code, current_shares in current_portfolio.items():
+        target_shares = target_portfolio.get(stock_code, 0)
+        
+        if target_shares < current_shares:
+            shares_to_sell = current_shares - target_shares
+            
+            if stock_code in current_prices and current_prices[stock_code] is not None:
+                sell_price = current_prices[stock_code]
+                sell_value = shares_to_sell * sell_price
+                sell_cost = calculate_trading_cost(sell_value)
+                total_proceeds += sell_value - sell_cost
+    
+    return total_proceeds
+
+def calculate_total_asset_value(jpy_portfolio_value, jpy_cash, usd_portfolio_value, usd_cash, exchange_rate):
+    """
+    総資産価値を計算（すべて円換算）
+    
+    Args:
+        jpy_portfolio_value: 日本株ポートフォリオの価値（円）
+        jpy_cash: 日本円現金
+        usd_portfolio_value: 米国株ポートフォリオの価値（ドル建ての場合はドル、円換算済みの場合は円）
+        usd_cash: 米ドル現金
+        exchange_rate: 為替レート（円/ドル）。Noneの場合はusd値を0として扱う
+    
+    Returns:
+        float: 総資産価値（円）
+    """
+    total = jpy_portfolio_value + jpy_cash
+    if exchange_rate is not None:
+        # usd_portfolio_valueが既に円換算されている場合とドル建ての場合の両方に対応
+        # 通常、calculate_portfolio_valueからの戻り値は円換算済みなので、
+        # ここではusd_portfolio_valueをそのまま加算し、usd_cashのみを換算する
+        total += usd_portfolio_value + (usd_cash * exchange_rate)
+    return total
+
 def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allocation_ratios, usd_allocation_ratios):
     """投資シミュレーションを実行"""
 
@@ -470,34 +551,14 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     temp_jpy_investment_value = temp_jpy_portfolio_value + jpy_cash  # 円
 
                 # 暫定の目標ポートフォリオを計算
-                temp_target_jpy_portfolio = {}
-                for i, (stock_code, vote_count) in enumerate(jpy_stocks):
-                    if i < len(jpy_allocation_ratios):
-                        allocation_ratio = jpy_allocation_ratios[i] / 100.0
-                        target_value = temp_jpy_investment_value * allocation_ratio
-
-                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
-                        if price is not None and price > 0:
-                            trading_cost = calculate_trading_cost(target_value)
-                            net_value = target_value - trading_cost
-                            target_shares = int(net_value / price)
-
-                            if target_shares > 0:
-                                temp_target_jpy_portfolio[stock_code] = target_shares
+                temp_target_jpy_portfolio = calculate_target_portfolio(
+                    jpy_stocks, jpy_allocation_ratios, temp_jpy_investment_value, trade_date.strftime("%Y-%m-%d")
+                )
 
                 # 減額売却が必要な場合の追加売却額を計算
-                additional_cash_from_sales = 0
-                for stock_code, current_shares in temp_jpy_portfolio.items():
-                    target_shares = temp_target_jpy_portfolio.get(stock_code, 0)
-
-                    if target_shares < current_shares:
-                        shares_to_sell = current_shares - target_shares
-
-                        if stock_code in current_jpy_prices and current_jpy_prices[stock_code] is not None:
-                            sell_price = current_jpy_prices[stock_code]
-                            sell_value = shares_to_sell * sell_price
-                            sell_cost = calculate_trading_cost(sell_value)
-                            additional_cash_from_sales += sell_value - sell_cost
+                additional_cash_from_sales = calculate_required_sale_proceeds(
+                    temp_jpy_portfolio, temp_target_jpy_portfolio, current_jpy_prices
+                )
 
                 # すべての売却後の最終投資額を計算
                 final_jpy_cash = jpy_cash + additional_cash_from_sales
@@ -525,21 +586,9 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     usd_investment_value_usd = usd_portfolio_value_usd + usd_cash  # ドル
 
                 # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
-                target_jpy_portfolio = {}
-                for i, (stock_code, vote_count) in enumerate(jpy_stocks):
-                    if i < len(jpy_allocation_ratios):
-                        allocation_ratio = jpy_allocation_ratios[i] / 100.0
-                        target_value = jpy_investment_value * allocation_ratio
-
-                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
-                        if price is not None and price > 0:
-                            # 取引コストを考慮して目標株数を計算
-                            trading_cost = calculate_trading_cost(target_value)
-                            net_value = target_value - trading_cost
-                            target_shares = int(net_value / price)  # 1株未満は切捨て
-
-                            if target_shares > 0:
-                                target_jpy_portfolio[stock_code] = target_shares
+                target_jpy_portfolio = calculate_target_portfolio(
+                    jpy_stocks, jpy_allocation_ratios, jpy_investment_value, trade_date.strftime("%Y-%m-%d")
+                )
 
                 # 3. 保有銘柄の調整（減額が必要な場合の売却）を実行
                 for stock_code, current_shares in temp_jpy_portfolio.items():
@@ -714,34 +763,14 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     temp_usd_investment_value_usd = temp_usd_portfolio_value_usd + usd_cash  # ドル
 
                 # 暫定の目標ポートフォリオを計算
-                temp_target_usd_portfolio = {}
-                for i, (stock_code, vote_count) in enumerate(usd_stocks):
-                    if i < len(usd_allocation_ratios):
-                        allocation_ratio = usd_allocation_ratios[i] / 100.0
-                        target_value_usd = temp_usd_investment_value_usd * allocation_ratio  # ドル
-
-                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
-                        if price is not None and price > 0:
-                            trading_cost_usd = calculate_trading_cost(target_value_usd)
-                            net_value_usd = target_value_usd - trading_cost_usd
-                            target_shares = int(net_value_usd / price)  # 1株未満は切捨て
-
-                            if target_shares > 0:
-                                temp_target_usd_portfolio[stock_code] = target_shares
+                temp_target_usd_portfolio = calculate_target_portfolio(
+                    usd_stocks, usd_allocation_ratios, temp_usd_investment_value_usd, trade_date.strftime("%Y-%m-%d")
+                )
 
                 # 減額売却が必要な場合の追加売却額を計算
-                additional_usd_cash_from_sales = 0
-                for stock_code, current_shares in temp_usd_portfolio.items():
-                    target_shares = temp_target_usd_portfolio.get(stock_code, 0)
-
-                    if target_shares < current_shares:
-                        shares_to_sell = current_shares - target_shares
-
-                        if stock_code in current_usd_prices and current_usd_prices[stock_code] is not None:
-                            sell_price = current_usd_prices[stock_code]
-                            sell_value_usd = shares_to_sell * sell_price
-                            sell_cost_usd = calculate_trading_cost(sell_value_usd)
-                            additional_usd_cash_from_sales += sell_value_usd - sell_cost_usd
+                additional_usd_cash_from_sales = calculate_required_sale_proceeds(
+                    temp_usd_portfolio, temp_target_usd_portfolio, current_usd_prices
+                )
 
                 # すべての売却後の最終投資額を計算
                 final_usd_cash = usd_cash + additional_usd_cash_from_sales
@@ -765,21 +794,9 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                     usd_investment_value_usd = final_usd_portfolio_value_usd + final_usd_cash  # ドル
 
                 # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
-                target_usd_portfolio = {}
-                for i, (stock_code, vote_count) in enumerate(usd_stocks):
-                    if i < len(usd_allocation_ratios):
-                        allocation_ratio = usd_allocation_ratios[i] / 100.0
-                        target_value_usd = usd_investment_value_usd * allocation_ratio  # ドル
-
-                        price = get_stock_price_cached(stock_code, trade_date.strftime("%Y-%m-%d"))
-                        if price is not None and price > 0:
-                            # 取引コストを考慮して目標株数を計算（ドル建て）
-                            trading_cost_usd = calculate_trading_cost(target_value_usd)
-                            net_value_usd = target_value_usd - trading_cost_usd
-                            target_shares = int(net_value_usd / price)  # 1株未満は切捨て
-
-                            if target_shares > 0:
-                                target_usd_portfolio[stock_code] = target_shares
+                target_usd_portfolio = calculate_target_portfolio(
+                    usd_stocks, usd_allocation_ratios, usd_investment_value_usd, trade_date.strftime("%Y-%m-%d")
+                )
 
                 # 3. 保有銘柄の調整（減額が必要な場合の売却）を実行
                 for stock_code, current_shares in temp_usd_portfolio.items():
