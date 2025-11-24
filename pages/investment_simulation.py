@@ -32,6 +32,7 @@ def get_price_from_cache(stock_code, date_str):
     Returns:
     float: 株価 または None
     """
+    conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -41,7 +42,6 @@ def get_price_from_cache(stock_code, date_str):
         """, (stock_code, date_str))
 
         result = cursor.fetchone()
-        conn.close()
 
         if result:
             return float(result[0])
@@ -49,6 +49,9 @@ def get_price_from_cache(stock_code, date_str):
 
     except Exception as e:
         return None
+    finally:
+        if conn is not None:
+            conn.close()
 
 def save_price_to_cache(stock_code, date_str, price, currency):
     """
@@ -60,6 +63,7 @@ def save_price_to_cache(stock_code, date_str, price, currency):
     price (float): 株価
     currency (str): 通貨（'JPY', 'USD', 'FX'）
     """
+    conn = None
     try:
         conn = get_connection()
         cursor = conn.cursor()
@@ -74,10 +78,12 @@ def save_price_to_cache(stock_code, date_str, price, currency):
         """, (stock_code, date_str, price, currency, updated_at))
 
         conn.commit()
-        conn.close()
 
     except Exception as e:
         pass  # エラーが発生してもキャッシュ保存の失敗は無視
+    finally:
+        if conn is not None:
+            conn.close()
 
 @lru_cache(maxsize=1000)
 def get_exchange_rate(target_date):
@@ -267,21 +273,23 @@ def get_vote_results_for_date_separated(vote_date):
 def get_vote_results_for_date(vote_date):
     """指定日の投票結果を取得"""
     conn = get_connection()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT stock_code, COUNT(*) as vote_count
+            FROM vote
+            WHERE vote_date = ?
+            GROUP BY stock_code
+            ORDER BY vote_count DESC
+            LIMIT 10
+        """, (vote_date,))
+        
+        results = cursor.fetchall()
     
-    cursor.execute("""
-        SELECT stock_code, COUNT(*) as vote_count
-        FROM vote
-        WHERE vote_date = ?
-        GROUP BY stock_code
-        ORDER BY vote_count DESC
-        LIMIT 10
-    """, (vote_date,))
-    
-    results = cursor.fetchall()
-    conn.close()
-    
-    return results
+        return results
+    finally:
+        conn.close()
 
 def calculate_trading_cost(trade_value, costs=TRADING_COSTS):
     """取引コストを計算"""
