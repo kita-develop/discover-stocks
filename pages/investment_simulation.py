@@ -286,7 +286,7 @@ def calculate_trading_cost(trade_value, costs=TRADING_COSTS):
     total_cost_rate = costs['commission_rate'] + costs['slippage_rate'] + costs['spread_rate']
     return trade_value * total_cost_rate
 
-def calculate_portfolio_value(portfolio, current_prices, allocation_ratios, exchange_rate=None):
+def calculate_portfolio_value(portfolio, current_prices, exchange_rate=None):
     """ポートフォリオの現在価値を計算（円換算）"""
     total_value = 0
     for i, (stock_code, shares) in enumerate(portfolio.items()):
@@ -401,8 +401,8 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                         current_usd_prices[stock_code] = price
                 
                 # 現在のポートフォリオ価値を計算（円換算）
-                jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, current_jpy_prices, None)
-                usd_portfolio_value = calculate_portfolio_value(usd_portfolio, current_usd_prices, None, exchange_rate)
+                jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, current_jpy_prices)
+                usd_portfolio_value = calculate_portfolio_value(usd_portfolio, current_usd_prices, exchange_rate)
 
                 # 総資産価値（すべて円換算）
                 total_value = jpy_portfolio_value + jpy_cash + usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
@@ -458,7 +458,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
 
                 # 2. 保有銘柄の調整を事前に計算（減額が必要な場合の売却額を把握）
                 # まず、現在のポートフォリオ価値と現金から投資額を計算（暫定）
-                temp_jpy_portfolio_value = calculate_portfolio_value(temp_jpy_portfolio, current_jpy_prices, None)
+                temp_jpy_portfolio_value = calculate_portfolio_value(temp_jpy_portfolio, current_jpy_prices)
                 
                 if not temp_jpy_portfolio and not usd_portfolio:
                     # 最初の取引
@@ -532,7 +532,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                         # すべての売却後のポートフォリオ価値に基づいて日本株と米国株の資金を配分
                         jpy_investment_value = final_jpy_portfolio_value + final_jpy_cash  # 円
                         # 米国株の価値をドルで計算
-                        usd_portfolio_value_usd = calculate_portfolio_value(usd_portfolio, current_usd_prices, None)  # ドル建て
+                        usd_portfolio_value_usd = calculate_portfolio_value(usd_portfolio, current_usd_prices)  # ドル建て
                         usd_investment_value_usd = usd_portfolio_value_usd + usd_cash  # ドル
 
                 # 新しい目標ポートフォリオを計算（すべての売却後の投資額を使用）
@@ -705,7 +705,7 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                 usd_cash += usd_cash_from_sales
 
                 # 売却後のポートフォリオ価値を再計算（ドル建て）
-                temp_usd_portfolio_value_usd = calculate_portfolio_value(temp_usd_portfolio, current_usd_prices, None)  # ドル建て
+                temp_usd_portfolio_value_usd = calculate_portfolio_value(temp_usd_portfolio, current_usd_prices)  # ドル建て
 
                 # 投資対象の総資産価値を決定（売却後の価値を使用）
                 if not jpy_portfolio and not temp_usd_portfolio:
@@ -941,8 +941,8 @@ def simulate_investment(start_date, end_date, initial_jpy, initial_usd, jpy_allo
                 daily_usd_prices[stock_code] = price
 
         # 終値でのポートフォリオ価値を計算（円換算）
-        daily_jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, daily_jpy_prices, None)
-        daily_usd_portfolio_value = calculate_portfolio_value(usd_portfolio, daily_usd_prices, None, exchange_rate)
+        daily_jpy_portfolio_value = calculate_portfolio_value(jpy_portfolio, daily_jpy_prices)
+        daily_usd_portfolio_value = calculate_portfolio_value(usd_portfolio, daily_usd_prices, exchange_rate)
 
         # 当日の総資産価値を計算（すべて円換算）
         daily_total_value = daily_jpy_portfolio_value + jpy_cash + daily_usd_portfolio_value + (usd_cash * exchange_rate if exchange_rate else 0)
