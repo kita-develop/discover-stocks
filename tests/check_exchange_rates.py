@@ -5,7 +5,6 @@ import pandas as pd
 def check_rates():
     print("Fetching USD/JPY rates for 2025/07 - 2025/11...")
     
-    # Note: Since the user's environment is in 2025, this should work.
     start_date = "2025-07-01"
     end_date = "2025-11-23"
     
