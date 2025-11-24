@@ -127,7 +127,11 @@ def get_exchange_rate(target_date):
         valid_dates = available_dates[available_dates <= target_timestamp]
         if len(valid_dates) > 0:
             closest_date = valid_dates[-1]
-            rate = float(df.loc[closest_date]["Close"].iloc[0])
+            close_value = df.loc[closest_date]["Close"]
+            if isinstance(close_value, pd.Series):
+                rate = float(close_value.iloc[0])
+            else:
+                rate = float(close_value)
 
             # 3. 取得した値をDBキャッシュに保存
             save_price_to_cache("USDJPY=X", target_date, rate, "FX")
@@ -184,7 +188,11 @@ def get_stock_price_cached(stock_code, target_date):
         valid_dates = available_dates[available_dates <= target_timestamp]
         if len(valid_dates) > 0:
             closest_date = valid_dates[-1]
-            price = float(df.loc[closest_date]["Close"].iloc[0])
+            close_value = df.loc[closest_date]["Close"]
+            if isinstance(close_value, pd.Series):
+                price = float(close_value.iloc[0])
+            else:
+                price = float(close_value)
 
             # 異常に大きな価格をチェック（例：1株あたり100万円を超える場合は無効）
             if price > 1000000 or price <= 0:
@@ -1172,7 +1180,7 @@ def create_calendar_heatmap(simulation_results, trade_history, year, month):
         html += "</tr>"
 
     html += "</table>"
-    html += "<p style='font-size: 12px; color: #666;'>※ 合計=実現損益+含み損益の日次変化、実=実現損益の日次変化、含=含み損益の日次変化（単位：万円、直前の営業日との差分）、損益率=日次損益率（%）</p>"
+    html += "<p style='font-size: 12px; color: inherit;'>※ 合計=実現損益+含み損益の日次変化、実=実現損益の日次変化、含=含み損益の日次変化（単位：万円、直前の営業日との差分）、損益率=日次損益率（%）</p>"
 
     # グラフ用のデータを準備
     chart_data = []
