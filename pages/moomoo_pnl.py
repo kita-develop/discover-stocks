@@ -10,6 +10,8 @@ from utils.db import get_connection
 # 定数
 TRADING_FEES_RATE = 0.0  # 必要に応じて調整
 TAX_RATE = 0.0 # 必要に応じて調整
+DEFAULT_EXCHANGE_RATE = 150.0  # 為替レート取得失敗時のデフォルト値
+QUANTITY_TOLERANCE = 0.0001  # 数量の誤差許容範囲
 
 def get_exchange_rate(date_str):
     """
@@ -24,19 +26,23 @@ def get_exchange_rate(date_str):
         df = yf.download(ticker, start=start_date, end=end_date, progress=False, auto_adjust=True)
         
         if df.empty:
-            return 150.0 # デフォルト値（エラー時）
+            return DEFAULT_EXCHANGE_RATE  # デフォルト値（エラー時）
 
         # 指定日以前の最新のデータを取得
         target_ts = pd.Timestamp(date_str)
         valid_rows = df[df.index <= target_ts]
         
         if not valid_rows.empty:
-            return float(valid_rows['Close'].iloc[-1])
+            close_value = valid_rows['Close'].iloc[-1]
+            # MultiIndex列の場合やSeriesの場合に対応
+            if hasattr(close_value, 'item'):
+                return float(close_value.item())
+            return float(close_value)
         
-        return 150.0
+        return DEFAULT_EXCHANGE_RATE
     except Exception as e:
         # st.error(f"為替レート取得エラー: {e}")
-        return 150.0
+        return DEFAULT_EXCHANGE_RATE
 
 def get_current_price(ticker):
     """
@@ -52,9 +58,13 @@ def get_current_price(ticker):
         stock = yf.Ticker(yf_ticker)
         history = stock.history(period="1d")
         if not history.empty:
-            return float(history['Close'].iloc[-1])
+            close_value = history['Close'].iloc[-1]
+            # MultiIndex列の場合やSeriesの場合に対応
+            if hasattr(close_value, 'item'):
+                return float(close_value.item())
+            return float(close_value)
         return None
-    except:
+    except Exception:
         return None
 
 def parse_moomoo_csv(file):
@@ -239,7 +249,7 @@ def calculate_pnl(df):
                 position['total_cost'] -= cost_basis # 平均法なので比例配分で減らす
                 
                 # 誤差修正（数量0ならコストも0）
-                if abs(position['qty']) < 0.0001:
+                if abs(position['qty']) < QUANTITY_TOLERANCE:
                     position['qty'] = 0
                     position['total_cost'] = 0
                     position['avg_cost'] = 0
@@ -280,7 +290,7 @@ def calculate_pnl(df):
     current_rate = get_exchange_rate(datetime.now().strftime("%Y-%m-%d"))
     
     for ticker, pos in holdings.items():
-        if pos['qty'] > 0.0001:
+        if pos['qty'] > QUANTITY_TOLERANCE:
             current_price = get_current_price(ticker)
             
             if current_price is not None:
