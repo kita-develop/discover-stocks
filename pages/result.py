@@ -239,7 +239,7 @@ def show(selected_date):
             st.markdown("---")
             
             # ランキング画像の生成・保存
-            def generate_ranking_image(data, date_str):
+            def generate_ranking_image(data, date_str, vote_sessions):
                 font_path = get_font_path()
                 font_prop = None
                 if font_path:
@@ -299,7 +299,7 @@ def show(selected_date):
 
                 return fig_table
 
-            ranking_fig = generate_ranking_image(results, selected_date_str)
+            ranking_fig = generate_ranking_image(results, selected_date_str, vote_sessions)
             
             ranking_buf = BytesIO()
             ranking_fig.savefig(ranking_buf, format="png", bbox_inches='tight', pad_inches=0.1)
