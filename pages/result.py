@@ -220,11 +220,96 @@ def show(selected_date):
             fig = generate_wordcloud(vote_data_str, selected_date_str, False)
             st.pyplot(fig)
             
+            # ワードクラウド画像のダウンロードボタン
+            buf = BytesIO()
+            fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
+            st.download_button(
+                label="銘柄コードワードクラウド画像保存",
+                data=buf.getvalue(),
+                file_name=f"銘柄コードワードクラウド{selected_date.strftime('%Y%m%d')}.png",
+                mime="image/png",
+            )
+            
             # 銘柄名のワードクラウド
             st.subheader("銘柄名のワードクラウド")
             stock_name_data_str = str(stock_name_dict)
             fig = generate_wordcloud(stock_name_data_str, selected_date_str, True)
             st.pyplot(fig)
+
+            st.markdown("---")
+            
+            # ランキング画像の生成・保存
+            def generate_ranking_image(data, date_str):
+                font_path = get_font_path()
+                if font_path:
+                    from matplotlib import font_manager
+                    font_prop = font_manager.FontProperties(fname=font_path)
+                    plt.rcParams['font.family'] = font_prop.get_name()
+                
+                # 上位20位を取得
+                top_20 = data[:20]
+                
+                # 表データの作成
+                table_data = []
+                # ヘッダー
+                columns = ["順位", "銘柄コード", "銘柄名", "投票数", "割合"]
+                
+                for i, row in enumerate(top_20, 1):
+                    stock_code = row[0]
+                    vote_count = row[1]
+                    stock_name = row[2] or stock_code
+                    percentage = (vote_count / vote_sessions * 100) if vote_sessions > 0 else 0
+                    table_data.append([
+                        str(i),
+                        stock_code,
+                        stock_name,
+                        str(vote_count),
+                        f"{percentage:.1f}%"
+                    ])
+                
+                # 図の作成
+                fig_table = plt.figure(figsize=(10, len(top_20) * 0.5 + 2))
+                ax = fig_table.add_subplot(111)
+                ax.axis('off')
+                ax.set_title(f"銘柄投票ランキング ({date_str})", fontproperties=font_prop if font_path else None, fontsize=16, pad=20)
+                
+                # 表の描画
+                table = ax.table(
+                    cellText=table_data,
+                    colLabels=columns,
+                    loc='center',
+                    cellLoc='center',
+                    colWidths=[0.1, 0.15, 0.4, 0.15, 0.15]
+                )
+                
+                table.auto_set_font_size(False)
+                table.set_fontsize(12)
+                table.scale(1, 1.5)
+                
+                # フォント設定
+                if font_path:
+                    for cell in table.get_celld().values():
+                        cell.set_text_props(fontproperties=font_prop)
+                        
+                    # ヘッダーのスタイル調整
+                    for (row, col), cell in table.get_celld().items():
+                        if row == 0:
+                            cell.set_text_props(weight='bold', fontproperties=font_prop)
+                            cell.set_facecolor('#f0f0f0')
+
+                return fig_table
+
+            ranking_fig = generate_ranking_image(results, selected_date_str)
+            
+            ranking_buf = BytesIO()
+            ranking_fig.savefig(ranking_buf, format="png", bbox_inches='tight', pad_inches=0.1)
+            
+            st.download_button(
+                label="投票結果上位20位保存",
+                data=ranking_buf.getvalue(),
+                file_name=f"銘柄投票ランキング{selected_date.strftime('%Y%m%d')}.png",
+                mime="image/png",
+            )
             
         except ImportError:
             st.error("wordcloudおよびmatplotlibライブラリが必要です。'pip install wordcloud matplotlib'でインストールしてください。")
@@ -247,6 +332,8 @@ def show(selected_date):
             cols[0].write(f"{index}")
             cols[1].write(stock_code)
             cols[2].markdown(stock_name_link, unsafe_allow_html=True)
-            cols[3].write(vote_count)
+            
+            percentage = (vote_count / vote_sessions * 100) if vote_sessions > 0 else 0
+            cols[3].write(f"{vote_count} ({percentage:.1f}%)")
     else:
         st.write("対象日の投票結果はまだありません。") 
