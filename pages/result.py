@@ -226,7 +226,7 @@ def show(selected_date):
             st.download_button(
                 label="銘柄コードワードクラウド画像保存",
                 data=buf.getvalue(),
-                file_name=f"銘柄コードワードクラウド{selected_date.strftime('%Y%m%d')}.png",
+                file_name=f"銘柄投票{selected_date.strftime('%Y%m%d')}.png",
                 mime="image/png",
             )
             
@@ -241,10 +241,10 @@ def show(selected_date):
             # ランキング画像の生成・保存
             def generate_ranking_image(data, date_str):
                 font_path = get_font_path()
+                font_prop = None
                 if font_path:
                     from matplotlib import font_manager
                     font_prop = font_manager.FontProperties(fname=font_path)
-                    plt.rcParams['font.family'] = font_prop.get_name()
                 
                 # 上位20位を取得
                 top_20 = data[:20]
