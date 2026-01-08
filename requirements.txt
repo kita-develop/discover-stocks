@@ -6,3 +6,4 @@ openpyxl
 yfinance
 plotly
 mplfinance
+altair
