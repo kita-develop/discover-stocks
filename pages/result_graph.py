@@ -54,10 +54,9 @@ def expand_on_vote_days(df, vote_days):
         g = g.reindex(vote_days)
 
         g["銘柄コード"] = code
-        result.append(g.reset_index())
+        result.append(g.reset_index(names="日付"))
 
     out = pd.concat(result, ignore_index=True)
-    out.rename(columns={"index": "日付"}, inplace=True)
     return out
 
 
@@ -124,132 +123,124 @@ def show(selected_date):
     conn.close()
 
     if results_jp or results_us:
-        # グラフ表示
-        try:
-            import matplotlib
-            import pandas as pd
+        # 投票結果をキャッシュキーとして使用
+        @st.cache_data(ttl=None)  # TTLなし（投票結果が変わるまでキャッシュ有効）
 
-            # 投票結果をキャッシュキーとして使用
-            @st.cache_data(ttl=None)  # TTLなし（投票結果が変わるまでキャッシュ有効）
+        # DataFrameに変換
+        def convert_to_df(vote_results):
+            df = pd.DataFrame(vote_results, columns=["日付", "銘柄コード", "投票数"])
+            df["日付"] = pd.to_datetime(df["日付"])  # 日付をDatetime型に変換
+            return df
 
-            # DataFrameに変換
-            def convert_to_df(vote_results):
-                df = pd.DataFrame(vote_results, columns=["日付", "銘柄コード", "投票数"])
-                df["日付"] = pd.to_datetime(df["日付"])  # 日付をDatetime型に変換
-                return df
+        # スライダーで日付範囲を選択
+        dates = pd.date_range(start = (selected_date - datetime.timedelta(days=MAX_DAYS)).strftime("%Y-%m-%d"), end = selected_date_str, freq = "D")
+        default_start_date = max(dates.min(), pd.Timestamp(selected_date) - pd.Timedelta(days=DEFAULT_DAYS))
 
-            # スライダーで日付範囲を選択
-            dates = pd.date_range(start = (selected_date - datetime.timedelta(days=MAX_DAYS)).strftime("%Y-%m-%d"), end = selected_date_str, freq = "D")
-            default_start_date = max(dates.min(), pd.Timestamp(selected_date) - pd.Timedelta(days=DEFAULT_DAYS))
+        # スライダー用意
+        start_date, end_date = st.slider(
+            "表示期間を選択してください:", 
+            min_value=dates.min().to_pydatetime(),
+            max_value=dates.max().to_pydatetime(),
+            value=(default_start_date.to_pydatetime(), dates.max().to_pydatetime()),
+            format="YYYY-MM-DD"
+        )
 
-            # スライダー用意
-            start_date, end_date = st.slider(
-                "表示期間を選択してください:", 
-                min_value=dates.min().to_pydatetime(),
-                max_value=dates.max().to_pydatetime(),
-                value=(default_start_date.to_pydatetime(), dates.max().to_pydatetime()),
-                format="YYYY-MM-DD"
-            )
+        result_list = [
+            {"result_key": "日本株", "result_value": results_jp},
+            {"result_key": "米国株", "result_value": results_us}
+        ]
 
-            result_list = [
-                {"result_key": "日本株", "result_value": results_jp},
-                {"result_key": "米国株", "result_value": results_us}
-            ]
+        df = None
+        for result in result_list:
+            st.subheader(result["result_key"])
+            df = convert_to_df(result["result_value"])
 
-            df = None
-            for result in result_list:
-                st.subheader(result["result_key"])
-                df = convert_to_df(result["result_value"])
-
-                # スライダー期間でフィルタ
-                filtered_df = df[
-                  (df["日付"] >= pd.to_datetime(start_date))
-                  & (df["日付"] <= pd.to_datetime(end_date))
-                ].copy()
-
-                # 無投票銘柄を NaN で補完 (期間がひらいて投票された銘柄対応)
-                vote_days = (filtered_df["日付"].drop_duplicates().sort_values())
-                filtered_df = expand_on_vote_days(filtered_df, vote_days)
-
-                options = st.multiselect(
-                  "銘柄コードを選択してください:",
-                  sorted(df["銘柄コード"].unique().tolist()),
-                  default=[]
-                )
-
-                if options:
-                  filtered_df = filtered_df[filtered_df["銘柄コード"].isin(options)]
-
-                if filtered_df.empty:
-                  st.info("この期間に表示できるデータがありません")
-                else:
-                  chart = draw_altair_line(filtered_df)
-                  st.altair_chart(chart, use_container_width=True)
-
-            # 投票数の合計と投票ボタンが押された回数の表示 (#13の追従)
-            df_vote = pd.DataFrame(
-                results_vote_count,
-                columns=["日付", "投票数の合計", "投票ボタンが押された回数"]
-            )
-            df_vote["日付"] = pd.to_datetime(df_vote["日付"])
-
-            filtered_df_vote = df_vote[
-                (df_vote["日付"] >= pd.to_datetime(start_date))
-                & (df_vote["日付"] <= pd.to_datetime(end_date))
+            # スライダー期間でフィルタ
+            filtered_df = df[
+              (df["日付"] >= pd.to_datetime(start_date))
+              & (df["日付"] <= pd.to_datetime(end_date))
             ].copy()
 
+            # 無投票銘柄を NaN で補完 (期間がひらいて投票された銘柄対応)
+            vote_days = (filtered_df["日付"].drop_duplicates().sort_values())
+            filtered_df = expand_on_vote_days(filtered_df, vote_days)
 
-            # 投票セッション数のグラフ
-            st.subheader("投票ボタンが押された回数")
-            chart_sessions = (
-                alt.Chart(filtered_df_vote)
-                .mark_line(point=alt.OverlayMarkDef(size=50))
-                .encode(
-                    x=alt.X(
-                        "日付:T",
-                        title="日付",
-                        axis=alt.Axis(
-                            format="%m月%d日",
-                            labelAngle=-45
-                        )
-                    ),
-                    y=alt.Y("投票ボタンが押された回数:Q", title="投票ボタンが押された回数"),
-                    tooltip=[
-                        alt.Tooltip("日付:T", title="日付", format="%Y年%m月%d日"),
-                        alt.Tooltip("投票ボタンが押された回数:Q", title="投票ボタンが押された回数"),
-                    ]
-                )
-                .properties(height=CHART_HEIGHT)
+            options = st.multiselect(
+              "銘柄コードを選択してください:",
+              sorted(df["銘柄コード"].unique().tolist()),
+              default=[]
             )
-            st.altair_chart(chart_sessions, use_container_width=True)
+
+            if options:
+              filtered_df = filtered_df[filtered_df["銘柄コード"].isin(options)]
+
+            if filtered_df.empty:
+              st.info("この期間に表示できるデータがありません")
+            else:
+              chart = draw_altair_line(filtered_df)
+              st.altair_chart(chart, use_container_width=True)
+
+        # 投票数の合計と投票ボタンが押された回数の表示 (#13の追従)
+        df_vote = pd.DataFrame(
+            results_vote_count,
+            columns=["日付", "投票数の合計", "投票ボタンが押された回数"]
+        )
+        df_vote["日付"] = pd.to_datetime(df_vote["日付"])
+
+        filtered_df_vote = df_vote[
+            (df_vote["日付"] >= pd.to_datetime(start_date))
+            & (df_vote["日付"] <= pd.to_datetime(end_date))
+        ].copy()
 
 
-            # 投票数のグラフ
-            st.subheader("投票数の合計")
-            chart_total = (
-                alt.Chart(filtered_df_vote)
-                .mark_line(point=alt.OverlayMarkDef(size=50))
-                .encode(
-                    x=alt.X(
-                        "日付:T",
-                        title="日付",
-                        axis=alt.Axis(
-                            format="%m月%d日",
-                            labelAngle=-45
-                        )
-                    ),
-                    y=alt.Y("投票数の合計:Q", title="投票数の合計"),
-                    tooltip=[
-                        alt.Tooltip("日付:T", title="日付", format="%Y年%m月%d日"),
-                        alt.Tooltip("投票数の合計:Q", title="投票数の合計"),
-                    ]
-                )
-                .properties(height=CHART_HEIGHT)
+        # 投票セッション数のグラフ
+        st.subheader("投票ボタンが押された回数")
+        chart_sessions = (
+            alt.Chart(filtered_df_vote)
+            .mark_line(point=alt.OverlayMarkDef(size=50))
+            .encode(
+                x=alt.X(
+                    "日付:T",
+                    title="日付",
+                    axis=alt.Axis(
+                        format="%m月%d日",
+                        labelAngle=-45
+                    )
+                ),
+                y=alt.Y("投票ボタンが押された回数:Q", title="投票ボタンが押された回数"),
+                tooltip=[
+                    alt.Tooltip("日付:T", title="日付", format="%Y年%m月%d日"),
+                    alt.Tooltip("投票ボタンが押された回数:Q", title="投票ボタンが押された回数"),
+                ]
             )
-            st.altair_chart(chart_total, use_container_width=True)
+            .properties(height=CHART_HEIGHT)
+        )
+        st.altair_chart(chart_sessions, use_container_width=True)
 
-        except ImportError:
-            st.error("matplotlib, pandas ライブラリが必要です。'pip3 install matplotlib, pandas'でインストールしてください。")
+
+        # 投票数のグラフ
+        st.subheader("投票数の合計")
+        chart_total = (
+            alt.Chart(filtered_df_vote)
+            .mark_line(point=alt.OverlayMarkDef(size=50))
+            .encode(
+                x=alt.X(
+                    "日付:T",
+                    title="日付",
+                    axis=alt.Axis(
+                        format="%m月%d日",
+                        labelAngle=-45
+                    )
+                ),
+                y=alt.Y("投票数の合計:Q", title="投票数の合計"),
+                tooltip=[
+                    alt.Tooltip("日付:T", title="日付", format="%Y年%m月%d日"),
+                    alt.Tooltip("投票数の合計:Q", title="投票数の合計"),
+                ]
+            )
+            .properties(height=CHART_HEIGHT)
+        )
+        st.altair_chart(chart_total, use_container_width=True)
 
     else:
         st.write("対象日の投票結果はまだありません。")
