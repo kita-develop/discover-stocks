@@ -3,6 +3,7 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
 from utils.common import get_ticker, get_stock_name
+from utils.db import get_connection
 from io import BytesIO
 import mplfinance as mpf
 import matplotlib
@@ -112,6 +113,23 @@ def create_candlestick_chart(df):
     
     return buf, chart_type  # チャートタイプも返す
 
+def get_vote_results_top_n(vote_date, top_n=20):
+    """指定日の投票結果上位N件を取得"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT stock_code, COUNT(*) as vote_count
+            FROM vote
+            WHERE vote_date = ?
+            GROUP BY stock_code
+            ORDER BY vote_count DESC
+            LIMIT ?
+        """, (vote_date, top_n))
+        return cursor.fetchall()  # [(銘柄コード, 投票数), ...]
+    finally:
+        conn.close()
+
 def show(selected_date):
     st.title("特定銘柄分析ページ")
     
@@ -119,36 +137,130 @@ def show(selected_date):
     init_session_state()
 
     # 最大登録数
-    MAX_STOCKS = st.number_input("同時登録最大数", min_value=1, max_value=10, value=5, step=1)
+    MAX_STOCKS = st.number_input("同時登録最大数", min_value=1, max_value=150, value=50, step=1)
+
+    # 銘柄コード入力のセッション状態を初期化
+    if 'stock_codes_input' not in st.session_state:
+        st.session_state['stock_codes_input'] = ""
 
     # 銘柄コード入力
     stock_codes = st.text_area(
         "銘柄コードをカンマ区切りで入力（例: 7203, 6758）",
-        value="",
-        help="最大{}個まで".format(MAX_STOCKS)
+        value=st.session_state['stock_codes_input'],
+        help="最大{}個まで".format(MAX_STOCKS),
+        key="stock_codes_textarea"
     )
+    
+    # 入力値をセッション状態に保存
+    st.session_state['stock_codes_input'] = stock_codes
+
+    # 投票結果から挿入機能
+    with st.expander("📊 投票結果から銘柄を挿入", expanded=False):
+        col_vote1, col_vote2 = st.columns(2)
+        with col_vote1:
+            vote_date = st.date_input(
+                "投票日",
+                value=selected_date,
+                min_value=datetime(2020, 1, 1).date(),
+                max_value=datetime.now().date(),
+                key="vote_date_for_insert"
+            )
+        with col_vote2:
+            insert_count = st.number_input(
+                "挿入件数",
+                min_value=1,
+                max_value=150,
+                value=20,
+                step=1,
+                key="insert_count"
+            )
+        
+        insert_mode = st.radio(
+            "挿入方法",
+            ["置換（既存をクリア）", "追加（末尾に追加）"],
+            horizontal=True,
+            key="insert_mode"
+        )
+        
+        if st.button("投票結果を挿入", key="insert_vote_results"):
+            vote_date_str = vote_date.strftime("%Y-%m-%d")
+            vote_results = get_vote_results_top_n(vote_date_str, insert_count)
+            
+            if vote_results:
+                # 銘柄コードのみを抽出
+                new_codes = [code for code, _ in vote_results]
+                
+                if insert_mode == "置換（既存をクリア）":
+                    st.session_state['stock_codes_input'] = ", ".join(new_codes)
+                else:  # 追加
+                    existing_codes = [code.strip() for code in st.session_state['stock_codes_input'].split(",") if code.strip()]
+                    # 重複を除いて追加
+                    for code in new_codes:
+                        if code not in existing_codes:
+                            existing_codes.append(code)
+                    st.session_state['stock_codes_input'] = ", ".join(existing_codes)
+                
+                st.success(f"{len(new_codes)}件の銘柄コードを挿入しました。")
+                st.rerun()
+            else:
+                st.warning("指定された日付に投票結果がありません。")
 
     # 入力された銘柄コードをリスト化
     stock_code_list = [code.strip() for code in stock_codes.split(",") if code.strip()][:MAX_STOCKS]
 
-    # 期間指定を一律に設定
+    # 期間設定モードの選択
+    date_mode = st.radio(
+        "期間設定モード",
+        ["共通設定", "銘柄ごと設定"],
+        index=0,  # デフォルトは共通設定
+        horizontal=True,
+        key="date_mode"
+    )
+
+    # 共通の期間設定（共通設定モードまたはデフォルト値として使用）
     col1, col2 = st.columns(2)
     with col1:
-        start_date = st.date_input(
-            f"分析開始日",
-                value=datetime.now().date() - timedelta(days=30),
-                min_value=datetime(2010, 1, 1).date(),
-                max_value=datetime.now().date(),
-                key=f"start_date"
+        common_start_date = st.date_input(
+            "分析開始日（共通）" if date_mode == "共通設定" else "デフォルト開始日",
+            value=datetime.now().date() - timedelta(days=120),  # 4ヶ月前
+            min_value=datetime(2010, 1, 1).date(),
+            max_value=datetime.now().date(),
+            key="common_start_date"
         )
     with col2:
-        end_date = st.date_input(
-            f"分析終了日",
-                value=datetime.now().date(),
-                min_value=start_date,
-                max_value=datetime.now().date(),
-                key=f"end_date"
+        common_end_date = st.date_input(
+            "分析終了日（共通）" if date_mode == "共通設定" else "デフォルト終了日",
+            value=datetime.now().date(),
+            min_value=common_start_date,
+            max_value=datetime.now().date(),
+            key="common_end_date"
         )
+
+    # 銘柄ごとの期間設定（銘柄ごと設定モードの場合）
+    stock_dates = {}
+    if date_mode == "銘柄ごと設定" and stock_code_list:
+        st.write("**銘柄ごとの期間設定**")
+        for code in stock_code_list:
+            stock_name = get_stock_name(code)
+            with st.expander(f"{stock_name}({code}) の期間設定", expanded=False):
+                col_s, col_e = st.columns(2)
+                with col_s:
+                    start_date = st.date_input(
+                        f"開始日",
+                        value=common_start_date,
+                        min_value=datetime(2010, 1, 1).date(),
+                        max_value=datetime.now().date(),
+                        key=f"start_date_{code}"
+                    )
+                with col_e:
+                    end_date = st.date_input(
+                        f"終了日",
+                        value=common_end_date,
+                        min_value=start_date,
+                        max_value=datetime.now().date(),
+                        key=f"end_date_{code}"
+                    )
+                stock_dates[code] = (start_date, end_date)
 
     # データ取得・表示
     if st.button("データ取得"):
@@ -164,6 +276,12 @@ def show(selected_date):
                 # 進捗バーの更新
                 progress = (i + 1) / total_stocks
                 progress_bar.progress(progress)
+
+                # 期間設定モードに応じて開始日・終了日を決定
+                if date_mode == "銘柄ごと設定" and code in stock_dates:
+                    start_date, end_date = stock_dates[code]
+                else:
+                    start_date, end_date = common_start_date, common_end_date
 
                 start_date_str = start_date.strftime("%Y-%m-%d")
                 end_date_str = end_date.strftime("%Y-%m-%d")
