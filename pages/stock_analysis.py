@@ -131,33 +131,30 @@ def show(selected_date):
     # 入力された銘柄コードをリスト化
     stock_code_list = [code.strip() for code in stock_codes.split(",") if code.strip()][:MAX_STOCKS]
 
-    # 銘柄ごとに期間指定
-    date_ranges = {}
-    for code in stock_code_list:
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                f"{get_stock_name(code)} ({code})の開始日",
+    # 期間指定を一律に設定
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            f"分析開始日",
                 value=datetime.now().date() - timedelta(days=30),
                 min_value=datetime(2010, 1, 1).date(),
                 max_value=datetime.now().date(),
-                key=f"start_{code}"
-            )
-        with col2:
-            end_date = st.date_input(
-                f"{code}の終了日",
+                key=f"start_date"
+        )
+    with col2:
+        end_date = st.date_input(
+            f"分析終了日",
                 value=datetime.now().date(),
                 min_value=start_date,
                 max_value=datetime.now().date(),
-                key=f"end_{code}"
-            )
-        date_ranges[code] = (start_date, end_date)
+                key=f"end_date"
+        )
 
     # データ取得・表示
     if st.button("データ取得"):
         progress_bar = st.progress(0)
         total_stocks = len(stock_code_list)
-        
+
         # 新しいデータ取得時にはセッション状態をリセット
         st.session_state['stock_data'] = {}
         st.session_state['charts'] = {}
@@ -167,10 +164,9 @@ def show(selected_date):
                 # 進捗バーの更新
                 progress = (i + 1) / total_stocks
                 progress_bar.progress(progress)
-                
-                start, end = date_ranges[code]
-                start_date_str = start.strftime("%Y-%m-%d")
-                end_date_str = end.strftime("%Y-%m-%d")
+
+                start_date_str = start_date.strftime("%Y-%m-%d")
+                end_date_str = end_date.strftime("%Y-%m-%d")
                 
                 # キャッシュ付きのデータ取得関数を使用
                 df = get_stock_data(code, start_date_str, end_date_str)
