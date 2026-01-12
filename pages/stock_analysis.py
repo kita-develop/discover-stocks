@@ -19,6 +19,10 @@ def init_session_state():
         st.session_state['stock_data'] = {}
     if 'charts' not in st.session_state:
         st.session_state['charts'] = {}
+    if 'vote_input_codes' not in st.session_state:
+        st.session_state['vote_input_codes'] = ""
+    if 'direct_input_codes' not in st.session_state:
+        st.session_state['direct_input_codes'] = ""
 
 @lru_cache(maxsize=400)
 def get_stock_data(stock_code, start_date, end_date):
@@ -139,12 +143,19 @@ def show(selected_date):
     # 最大登録数
     MAX_STOCKS = st.number_input("同時登録最大数", min_value=1, max_value=150, value=50, step=1)
 
-    # 銘柄コード入力のセッション状態を初期化
-    if 'stock_codes_input' not in st.session_state:
-        st.session_state['stock_codes_input'] = ""
+    # 銘柄指定方法の選択
+    input_method = st.radio(
+        "銘柄指定方法",
+        ["投票結果から銘柄を挿入", "銘柄コードをカンマ区切りで入力"],
+        index=0,
+        horizontal=True,
+        key="input_method_radio"
+    )
 
-    # 投票結果から挿入機能（テキストエリアより前に配置し、同一ランで反映）
-    with st.expander("📊 投票結果から銘柄を挿入", expanded=True):
+    stock_codes_for_analysis = ""
+
+    if input_method == "投票結果から銘柄を挿入":
+        st.markdown("### 投票結果設定")
         col_vote1, col_vote2 = st.columns(2)
         with col_vote1:
             vote_date = st.date_input(
@@ -184,43 +195,45 @@ def show(selected_date):
                     if insert_mode == "置換（既存をクリア）":
                         new_value = ", ".join(new_codes)
                     else:  # 追加
-                        existing_codes = [code.strip() for code in st.session_state['stock_codes_input'].split(",") if code.strip()]
+                        existing_codes = [code.strip() for code in st.session_state['vote_input_codes'].split(",") if code.strip()]
                         # 重複を除いて追加
                         for code in new_codes:
                             if code not in existing_codes:
                                 existing_codes.append(code)
                         new_value = ", ".join(existing_codes)
                     
-                    # セッション状態を即時更新して同一ランで反映
-                    st.session_state['stock_codes_input'] = new_value
-                    st.success(
-                        f"{len(new_codes)}件の銘柄コードを挿入しました。下の枠からコピーできます。"
-                    )
-                    st.text_area(
-                        "挿入結果プレビュー",
-                        value=new_value,
-                        height=120,
-                        key="inserted_codes_preview",
-                        disabled=True
-                    )
+                    # セッション状態を即時更新
+                    st.session_state['vote_input_codes'] = new_value
+                    st.success(f"{len(new_codes)}件の銘柄コードを挿入しました。")
                 else:
                     st.warning("指定された日付に投票結果がありません。")
             except Exception as e:
                 st.error(f"エラーが発生しました: {str(e)}")
 
-    # 銘柄コード入力（挿入結果を含むセッション状態を表示）
-    stock_codes = st.text_area(
-        "銘柄コードをカンマ区切りで入力（例: 7203, 6758）",
-        value=st.session_state['stock_codes_input'],
-        help="最大{}個まで".format(MAX_STOCKS),
-        key="stock_codes_textarea"
-    )
-    
-    # 入力値をセッション状態に保存
-    st.session_state['stock_codes_input'] = stock_codes
+        # 編集可能なテキストエリア
+        stock_codes_for_analysis = st.text_area(
+            "挿入結果プレビュー（編集可能）",
+            value=st.session_state['vote_input_codes'],
+            height=120,
+            key="vote_input_codes_area",
+            help=f"最大{MAX_STOCKS}個まで"
+        )
+        # 入力値をセッション状態に同期
+        st.session_state['vote_input_codes'] = stock_codes_for_analysis
 
-    # 入力された銘柄コードをリスト化
-    stock_code_list = [code.strip() for code in stock_codes.split(",") if code.strip()][:MAX_STOCKS]
+    else:
+        # 直接入力モード
+        stock_codes_for_analysis = st.text_area(
+            "銘柄コードをカンマ区切りで入力（例: 7203, 6758）",
+            value=st.session_state['direct_input_codes'],
+            help=f"最大{MAX_STOCKS}個まで",
+            key="direct_input_codes_area"
+        )
+        # 入力値をセッション状態に同期
+        st.session_state['direct_input_codes'] = stock_codes_for_analysis
+
+    # 入力された銘柄コードをリスト化（共通処理）
+    stock_code_list = [code.strip() for code in stock_codes_for_analysis.split(",") if code.strip()][:MAX_STOCKS]
 
     # 期間設定モードの選択
     date_mode = st.radio(
