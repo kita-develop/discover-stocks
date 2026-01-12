@@ -204,7 +204,10 @@ def show(selected_date):
                     
                     # セッション状態を即時更新
                     st.session_state['vote_input_codes'] = new_value
-                    st.success(f"{len(new_codes)}件の銘柄コードを挿入しました。")
+                    st.session_state['vote_input_codes_area'] = new_value
+                    st.success(f"{len(new_codes)}件の銘柄コードを挿入しました。下の枠からコピーできます。")
+                    st.code(new_value, language="text")
+                    st.rerun()
                 else:
                     st.warning("指定された日付に投票結果がありません。")
             except Exception as e:
