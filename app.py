@@ -1,7 +1,7 @@
 import streamlit as st
 from utils.db import init_db
 from utils.common import get_date_from_params
-from pages import top, survey, vote, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl
+from pages import top, survey, vote, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl, score_ranking
 
 # DB初期化
 init_db()
@@ -28,6 +28,7 @@ st.sidebar.markdown(f'<a href="./?page=stock_evaluation&date={date_str}" target=
 st.sidebar.markdown(f'<a href="./?page=investment_simulation&date={date_str}" target="_self">⑥ 投資シミュレーション</a>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 st.sidebar.markdown(f'<a href="./?page=stock_analysis&date={date_str}" target="_self">特定銘柄分析</a>', unsafe_allow_html=True)
+st.sidebar.markdown(f'<a href="./?page=score_ranking&date={date_str}" target="_self">安定上昇銘柄ランキング </a>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 st.sidebar.markdown(f'<a href="./?page=moomoo_pnl&date={date_str}" target="_self">moomoo証券 損益分析</a>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
@@ -53,6 +54,8 @@ elif page == 'investment_simulation':
     investment_simulation.show(selected_date)
 elif page == 'stock_analysis':
     stock_analysis.show(selected_date)
+elif page == 'score_ranking':
+    score_ranking.show()
 elif page == 'moomoo_pnl':
     moomoo_pnl.show(selected_date)
 else:

@@ -7,3 +7,4 @@ yfinance
 plotly
 mplfinance
 altair
+scikit-learn

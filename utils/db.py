@@ -69,6 +69,35 @@ def init_db():
         """
     )
 
+    # 分析結果（スコア詳細）を保存するテーブル
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS analysis_results (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            analysis_date TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            
+            -- 総合スコア
+            total_score REAL,
+            rank INTEGER,
+            
+            -- 内訳スコア (0-100)
+            score_trend REAL,
+            score_stability REAL,
+            score_liquidity REAL,
+            score_penalty REAL,
+            
+            -- 生データ・特徴量（検証用）
+            raw_slope REAL,       -- トレンドの傾き
+            raw_r2 REAL,          -- 決定係数（綺麗さ）
+            raw_volatility REAL,  -- ボラティリティ
+            raw_mdd REAL,         -- 最大ドローダウン
+            raw_volume_ratio REAL, -- 出来高変化率
+            
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_analysis_date_code ON analysis_results (analysis_date, stock_code);")
+
     conn.commit()
     conn.close()
 
@@ -92,5 +121,22 @@ def init_price_cache_table():
         """)
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_price_cache_updated_at ON price_cache (updated_at);")
         conn.commit()
+    finally:
+        conn.close()
+
+def get_vote_results_top_n(vote_date, top_n=20):
+    """指定日の投票結果上位N件を取得"""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT stock_code, COUNT(*) as vote_count
+            FROM vote
+            WHERE vote_date = ?
+            GROUP BY stock_code
+            ORDER BY vote_count DESC
+            LIMIT ?
+        """, (vote_date, top_n))
+        return cursor.fetchall()  # [(銘柄コード, 投票数), ...]
     finally:
         conn.close()
