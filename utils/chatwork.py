@@ -1,9 +1,10 @@
 """
 ChatWork OAuth & API連携ユーティリティ
 
-セッションに依存しないOAuth実装:
-- stateにPKCE verifier、ページ情報を含める
-- HMAC署名で改竄を防止
+機能:
+- セッションに依存しないOAuth実装（stateにPKCE verifier埋め込み）
+- HMAC署名でstate改竄防止
+- クッキーによるトークン永続化（Fernet暗号化）
 """
 import base64
 import hashlib
@@ -15,6 +16,8 @@ from urllib.parse import urlencode
 
 import requests
 import streamlit as st
+from cryptography.fernet import Fernet, InvalidToken
+from streamlit_cookies_controller import CookieController
 
 
 # ====== 設定 ======
@@ -22,6 +25,7 @@ CLIENT_ID = st.secrets["CHATWORK_CLIENT_ID"]
 CLIENT_SECRET = st.secrets["CHATWORK_CLIENT_SECRET"]
 REDIRECT_URI = st.secrets["CHATWORK_REDIRECT_URI"]
 TARGET_ROOM_ID = int(st.secrets["CHATWORK_ROOM_ID"])
+TOKEN_ENCRYPT_KEY = st.secrets["CHATWORK_TOKEN_ENCRYPT_KEY"]
 
 AUTH_URL = "https://www.chatwork.com/packages/oauth2/login.php"
 TOKEN_URL = "https://oauth.chatwork.com/token"
@@ -29,8 +33,26 @@ API_BASE = "https://api.chatwork.com/v2"
 
 SCOPES = "rooms.all:read_write users.profile.me:read"
 
+# クッキー設定
+COOKIE_NAME = "cw_tokens"
+COOKIE_MAX_AGE_DAYS = 14  # Refresh Tokenの有効期限に合わせる
+
 # HMAC署名シークレット（CLIENT_SECRETを使用）
 _HMAC_SECRET = CLIENT_SECRET.encode("utf-8")
+
+# Fernet暗号化用
+_fernet = Fernet(TOKEN_ENCRYPT_KEY.encode("utf-8"))
+
+# CookieControllerはシングルトンで管理
+_cookie_controller = None
+
+
+def _get_cookie_controller() -> CookieController:
+    """CookieControllerのシングルトン取得"""
+    global _cookie_controller
+    if _cookie_controller is None:
+        _cookie_controller = CookieController()
+    return _cookie_controller
 
 
 def _b64(s: str) -> str:
@@ -96,6 +118,81 @@ def _verify_and_decode_state(state: str) -> dict | None:
         return None
 
 
+# ====== クッキー関連 ======
+
+def _encrypt_tokens(access_token: str, refresh_token: str, expires_at: float) -> str:
+    """トークン情報を暗号化"""
+    data = json.dumps({
+        "a": access_token,
+        "r": refresh_token,
+        "e": expires_at
+    })
+    return _fernet.encrypt(data.encode("utf-8")).decode("utf-8")
+
+
+def _decrypt_tokens(encrypted: str) -> dict | None:
+    """暗号化されたトークンを復号"""
+    try:
+        decrypted = _fernet.decrypt(encrypted.encode("utf-8")).decode("utf-8")
+        return json.loads(decrypted)
+    except (InvalidToken, json.JSONDecodeError):
+        return None
+
+
+def save_tokens_to_cookie():
+    """現在のトークンをクッキーに保存"""
+    if "cw_access_token" not in st.session_state:
+        return
+    
+    encrypted = _encrypt_tokens(
+        st.session_state["cw_access_token"],
+        st.session_state.get("cw_refresh_token", ""),
+        st.session_state.get("cw_expires_at", 0)
+    )
+    
+    controller = _get_cookie_controller()
+    controller.set(COOKIE_NAME, encrypted)
+
+
+def load_tokens_from_cookie() -> bool:
+    """
+    クッキーからトークンを復元してsession_stateにセット
+    Returns: 復元成功したかどうか
+    """
+    if "cw_access_token" in st.session_state:
+        return True  # 既にセッションにある
+    
+    controller = _get_cookie_controller()
+    encrypted = controller.get(COOKIE_NAME)
+    
+    if not encrypted:
+        return False
+    
+    tokens = _decrypt_tokens(encrypted)
+    if tokens is None:
+        # 復号失敗、クッキー削除
+        controller.remove(COOKIE_NAME)
+        return False
+    
+    st.session_state["cw_access_token"] = tokens["a"]
+    st.session_state["cw_refresh_token"] = tokens.get("r", "")
+    st.session_state["cw_expires_at"] = tokens.get("e", 0)
+    
+    return True
+
+
+def clear_tokens():
+    """トークンをセッションとクッキーから削除（ログアウト）"""
+    for key in ["cw_access_token", "cw_refresh_token", "cw_expires_at"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    controller = _get_cookie_controller()
+    controller.remove(COOKIE_NAME)
+
+
+# ====== API関連 ======
+
 def _authz_header() -> dict:
     """Bearer認証ヘッダー"""
     return {"authorization": f"Bearer {st.session_state['cw_access_token']}"}
@@ -125,10 +222,18 @@ def _refresh_if_needed():
     tok = r.json()
     st.session_state["cw_access_token"] = tok["access_token"]
     st.session_state["cw_expires_at"] = time.time() + int(tok.get("expires_in", 1800))
+    
+    # 更新後クッキーにも保存
+    save_tokens_to_cookie()
 
 
 def is_logged_in() -> bool:
-    """ChatWorkにログイン済みかどうか"""
+    """
+    ChatWorkにログイン済みかどうか
+    クッキーからの自動復元も試みる
+    """
+    # まずクッキーから復元を試みる
+    load_tokens_from_cookie()
     return "cw_access_token" in st.session_state
 
 
@@ -234,6 +339,9 @@ def handle_oauth_callback() -> dict | None:
         st.session_state["cw_refresh_token"] = tok.get("refresh_token")
         st.session_state["cw_expires_at"] = time.time() + int(tok.get("expires_in", 1800))
         
+        # クッキーに保存
+        save_tokens_to_cookie()
+        
         return return_info
     except requests.exceptions.HTTPError as e:
         st.error(f"トークン取得エラー: {e.response.status_code} - {e.response.text}")
@@ -283,5 +391,6 @@ def post_files_to_room(files_data: list[tuple[str, bytes, str]], message: str = 
         r.raise_for_status()
     
     return True
+
 
 
