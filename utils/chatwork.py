@@ -12,12 +12,13 @@ import hmac
 import secrets
 import time
 import json
+from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 import requests
 import streamlit as st
 from cryptography.fernet import Fernet, InvalidToken
-from streamlit_cookies_controller import CookieController
+import extra_streamlit_components as stx
 
 
 # ====== 設定 ======
@@ -43,16 +44,16 @@ _HMAC_SECRET = CLIENT_SECRET.encode("utf-8")
 # Fernet暗号化用
 _fernet = Fernet(TOKEN_ENCRYPT_KEY.encode("utf-8"))
 
-# CookieControllerはシングルトンで管理
-_cookie_controller = None
+# CookieManagerはシングルトンで管理（キャッシュデコレータは使用しない）
+_cookie_manager = None
 
 
-def _get_cookie_controller() -> CookieController:
-    """CookieControllerのシングルトン取得"""
-    global _cookie_controller
-    if _cookie_controller is None:
-        _cookie_controller = CookieController()
-    return _cookie_controller
+def _get_cookie_manager():
+    """CookieManagerのシングルトン取得"""
+    global _cookie_manager
+    if _cookie_manager is None:
+        _cookie_manager = stx.CookieManager()
+    return _cookie_manager
 
 
 def _b64(s: str) -> str:
@@ -150,8 +151,17 @@ def save_tokens_to_cookie():
         st.session_state.get("cw_expires_at", 0)
     )
     
-    controller = _get_cookie_controller()
-    controller.set(COOKIE_NAME, encrypted)
+    manager = _get_cookie_manager()
+    # 有効期限を明示的に設定（14日後）
+    expires = datetime.now() + timedelta(days=COOKIE_MAX_AGE_DAYS)
+    manager.set(
+        COOKIE_NAME, 
+        encrypted,
+        expires_at=expires,
+        path="/",
+        secure=True,  # HTTPS必須
+        same_site="strict"
+    )
 
 
 def load_tokens_from_cookie() -> bool:
@@ -162,8 +172,10 @@ def load_tokens_from_cookie() -> bool:
     if "cw_access_token" in st.session_state:
         return True  # 既にセッションにある
     
-    controller = _get_cookie_controller()
-    encrypted = controller.get(COOKIE_NAME)
+    manager = _get_cookie_manager()
+    # CookieManagerはロードに時間がかかるため、複数回試行する場合があります
+    # が、stx.CookieManagerはget()で同期的に取得を試みます
+    encrypted = manager.get(COOKIE_NAME)
     
     if not encrypted:
         return False
@@ -171,7 +183,7 @@ def load_tokens_from_cookie() -> bool:
     tokens = _decrypt_tokens(encrypted)
     if tokens is None:
         # 復号失敗、クッキー削除
-        controller.remove(COOKIE_NAME)
+        manager.delete(COOKIE_NAME)
         return False
     
     st.session_state["cw_access_token"] = tokens["a"]
@@ -187,8 +199,8 @@ def clear_tokens():
         if key in st.session_state:
             del st.session_state[key]
     
-    controller = _get_cookie_controller()
-    controller.remove(COOKIE_NAME)
+    manager = _get_cookie_manager()
+    manager.delete(COOKIE_NAME)
 
 
 # ====== API関連 ======

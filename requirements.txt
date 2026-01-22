@@ -8,5 +8,5 @@ plotly
 mplfinance
 altair
 scikit-learn
-streamlit-cookies-controller
+extra-streamlit-components
 cryptography
