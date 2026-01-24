@@ -1,10 +1,26 @@
 import streamlit as st
 from utils.db import init_db
 from utils.common import get_date_from_params
+from utils import chatwork
 from pages import top, survey, vote, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl, score_ranking
 
 # DB初期化
 init_db()
+
+# ChatWork OAuthコールバック処理（ページルーティング前に実行）
+oauth_result = chatwork.handle_oauth_callback()
+if oauth_result is not None:
+    # 認証成功、元のページにリダイレクト
+    return_page = oauth_result.get("page", "result")
+    return_date = oauth_result.get("date", "")
+    if return_page:
+        redirect_params = {"page": return_page}
+        if return_date:
+            redirect_params["date"] = return_date
+        st.query_params.clear()
+        for k, v in redirect_params.items():
+            st.query_params[k] = v
+        st.rerun()
 
 # URLパラメータから対象ページとdateを取得
 query_params = st.query_params

@@ -8,3 +8,5 @@ plotly
 mplfinance
 altair
 scikit-learn
+extra-streamlit-components
+cryptography
