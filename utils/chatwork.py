@@ -7,6 +7,7 @@ ChatWork OAuth & API連携ユーティリティ
 - クッキーによるトークン永続化（Fernet暗号化）
 """
 import base64
+import os
 import hashlib
 import hmac
 import secrets
@@ -22,11 +23,24 @@ import extra_streamlit_components as stx
 
 
 # ====== 設定 ======
-CLIENT_ID = st.secrets["CHATWORK_CLIENT_ID"]
-CLIENT_SECRET = st.secrets["CHATWORK_CLIENT_SECRET"]
-REDIRECT_URI = st.secrets["CHATWORK_REDIRECT_URI"]
-TARGET_ROOM_ID = int(st.secrets["CHATWORK_ROOM_ID"])
-TOKEN_ENCRYPT_KEY = st.secrets["CHATWORK_TOKEN_ENCRYPT_KEY"]
+def get_secret(key: str) -> str:
+    v = os.getenv(key)
+    if v:
+        return v
+    try:
+        return st.secrets[key]
+    except Exception:
+        return ""
+
+CLIENT_ID = get_secret("CHATWORK_CLIENT_ID")
+CLIENT_SECRET = get_secret("CHATWORK_CLIENT_SECRET")
+TARGET_ROOM_ID = int(get_secret("CHATWORK_ROOM_ID") or "0")
+REDIRECT_URI = get_secret("CHATWORK_REDIRECT_URI")
+TOKEN_ENCRYPT_KEY = get_secret("CHATWORK_TOKEN_ENCRYPT_KEY")
+
+if not CLIENT_ID or not CLIENT_SECRET or not TARGET_ROOM_ID or not REDIRECT_URI or not TOKEN_ENCRYPT_KEY:
+    st.error("Chatworkの設定が不足しています。Azureの環境変数（App settings）または secrets.toml を確認してください。")
+    st.stop()
 
 AUTH_URL = "https://www.chatwork.com/packages/oauth2/login.php"
 TOKEN_URL = "https://oauth.chatwork.com/token"
