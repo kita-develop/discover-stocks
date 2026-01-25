@@ -185,17 +185,13 @@ def save_tokens_to_cookie():
             parent.document.cookie = "{COOKIE_NAME}={encoded_value}; expires={expires_str}; path=/; SameSite=Lax; Secure";
             console.log("Cookie saved successfully");
         }} catch (e) {{
-            // エラーの詳細を表示（デバッグ用）
             console.error("Failed to save cookie:", e.name, e.message);
-            alert("Cookie保存エラー: " + e.name + " - " + e.message);
-            
             // フォールバック: 現在のドキュメントに設定
             try {{
                 document.cookie = "{COOKIE_NAME}={encoded_value}; expires={expires_str}; path=/; SameSite=Lax; Secure";
                 console.log("Fallback cookie saved");
             }} catch (e2) {{
                 console.error("Fallback also failed:", e2.name, e2.message);
-                alert("Fallback Cookie保存エラー: " + e2.name + " - " + e2.message);
             }}
         }}
     </script>
@@ -336,7 +332,29 @@ def show_login_button(return_page: str = None, return_date: str = None):
         "code_challenge_method": "S256",
     }
     login_url = f"{AUTH_URL}?{urlencode(params)}"
-    st.link_button("ChatWorkでログイン", login_url)
+    
+    # 同じタブで遷移するためにHTMLリンクを使用
+    # st.link_button はデフォルトで新しいタブを開くため
+    button_html = f"""
+        <style>
+        .cw-login-btn {{
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            background-color: #ff4b4b;
+            color: white !important;
+            text-decoration: none;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            text-align: center;
+        }}
+        .cw-login-btn:hover {{
+            background-color: #ff3333;
+            color: white !important;
+        }}
+        </style>
+        <a href="{login_url}" target="_self" class="cw-login-btn">ChatWorkでログイン</a>
+    """
+    st.markdown(button_html, unsafe_allow_html=True)
 
 
 def handle_oauth_callback() -> dict | None:
@@ -427,6 +445,23 @@ def is_room_member() -> bool:
     rooms.raise_for_status()
     rooms_json = rooms.json()
     return any(int(r.get("room_id")) == TARGET_ROOM_ID for r in rooms_json)
+
+
+def get_my_profile() -> dict | None:
+    """
+    ログインユーザーのプロフィール情報を取得
+    
+    Returns:
+        成功時: {"account_id": 123, "name": "表示名", ...}
+        失敗時: None
+    """
+    _refresh_if_needed()
+    try:
+        r = requests.get(f"{API_BASE}/me", headers=_authz_header(), timeout=30)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
 
 
 def post_files_to_room(files_data: list[tuple[str, bytes, str]], message: str = "") -> bool:

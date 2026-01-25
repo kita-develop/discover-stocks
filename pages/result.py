@@ -338,8 +338,17 @@ def show(selected_date):
             try:
                 if not chatwork.is_room_member():
                     st.warning("このルームのメンバーではないため、投稿できません。先にChatWorkでルームに参加してください。")
+                    chatwork.show_logout_button()
                 else:
-                    st.success("ログインOK & ルームメンバー確認OK ✅")
+                    # ログインユーザー情報を取得
+                    profile = chatwork.get_my_profile()
+                    user_name = profile.get("name", "不明") if profile else "不明"
+                    
+                    col_status, col_logout = st.columns([3, 1])
+                    with col_status:
+                        st.success(f"ログインOK（{user_name}）& ルームメンバー確認OK ✅")
+                    with col_logout:
+                        chatwork.show_logout_button()
                     
                     # 投稿するファイルの確認
                     files_to_post = []
