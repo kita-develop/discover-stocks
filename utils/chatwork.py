@@ -5,6 +5,13 @@ ChatWork OAuth & API連携ユーティリティ
 - セッションに依存しないOAuth実装（stateにPKCE verifier埋め込み）
 - HMAC署名でstate改竄防止
 - クッキーによるトークン永続化（Fernet暗号化）
+
+修正履歴:
+- CookieManager に一意の key を指定
+- secure / same_site 設定を環境に応じて制御
+- クッキー読み取りタイミングの問題を修正
+- extra_streamlit_components を廃止し、純粋なJavaScriptでクッキー操作
+- st.context.cookies を使用してクッキーを読み取り（Streamlit 1.37+）
 """
 import base64
 import os
@@ -14,12 +21,11 @@ import secrets
 import time
 import json
 from datetime import datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 
 import requests
 import streamlit as st
 from cryptography.fernet import Fernet, InvalidToken
-import extra_streamlit_components as stx
 
 
 # ====== 設定 ======
@@ -57,17 +63,6 @@ _HMAC_SECRET = CLIENT_SECRET.encode("utf-8")
 
 # Fernet暗号化用
 _fernet = Fernet(TOKEN_ENCRYPT_KEY.encode("utf-8"))
-
-# CookieManagerはシングルトンで管理（キャッシュデコレータは使用しない）
-_cookie_manager = None
-
-
-def _get_cookie_manager():
-    """CookieManagerのシングルトン取得"""
-    global _cookie_manager
-    if _cookie_manager is None:
-        _cookie_manager = stx.CookieManager()
-    return _cookie_manager
 
 
 def _b64(s: str) -> str:
@@ -155,66 +150,114 @@ def _decrypt_tokens(encrypted: str) -> dict | None:
 
 
 def save_tokens_to_cookie():
-    """現在のトークンをクッキーに保存"""
+    """
+    現在のトークンをクッキーに保存
+    
+    JavaScriptを使用してブラウザのクッキーを設定
+    st.components.v1.html の iframe は same-origin なので parent.document.cookie でアクセス可能
+    """
     if "cw_access_token" not in st.session_state:
         return
     
+    # 既に保存済みの場合はスキップ
+    if st.session_state.get("cw_cookie_saved"):
+        return
+    
+    # トークンを暗号化
     encrypted = _encrypt_tokens(
         st.session_state["cw_access_token"],
         st.session_state.get("cw_refresh_token", ""),
         st.session_state.get("cw_expires_at", 0)
     )
     
-    manager = _get_cookie_manager()
     # 有効期限を明示的に設定（14日後）
     expires = datetime.now() + timedelta(days=COOKIE_MAX_AGE_DAYS)
-    manager.set(
-        COOKIE_NAME, 
-        encrypted,
-        expires_at=expires,
-        path="/",
-        secure=True,  # HTTPS必須
-        same_site="strict"
-    )
+    expires_str = expires.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    
+    # URLエンコード（特殊文字対策）
+    encoded_value = quote(encrypted, safe='')
+    
+    # JavaScriptでクッキーを設定（parent.document を使用）
+    cookie_script = f"""
+    <script>
+        try {{
+            // 親ウィンドウのクッキーに設定
+            parent.document.cookie = "{COOKIE_NAME}={encoded_value}; expires={expires_str}; path=/; SameSite=Lax; Secure";
+            console.log("Cookie saved successfully");
+        }} catch (e) {{
+            // エラーの詳細を表示（デバッグ用）
+            console.error("Failed to save cookie:", e.name, e.message);
+            alert("Cookie保存エラー: " + e.name + " - " + e.message);
+            
+            // フォールバック: 現在のドキュメントに設定
+            try {{
+                document.cookie = "{COOKIE_NAME}={encoded_value}; expires={expires_str}; path=/; SameSite=Lax; Secure";
+                console.log("Fallback cookie saved");
+            }} catch (e2) {{
+                console.error("Fallback also failed:", e2.name, e2.message);
+                alert("Fallback Cookie保存エラー: " + e2.name + " - " + e2.message);
+            }}
+        }}
+    </script>
+    """
+    st.components.v1.html(cookie_script, height=0, width=0)
+    st.session_state["cw_cookie_saved"] = True
 
 
 def load_tokens_from_cookie() -> bool:
     """
     クッキーからトークンを復元してsession_stateにセット
+    
+    st.context.cookies を使用してブラウザのクッキーを読み取る（Streamlit 1.37+）
     Returns: 復元成功したかどうか
     """
+    # 既にセッションにある場合はスキップ
     if "cw_access_token" in st.session_state:
-        return True  # 既にセッションにある
+        return True
     
-    manager = _get_cookie_manager()
-    # CookieManagerはロードに時間がかかるため、複数回試行する場合があります
-    # が、stx.CookieManagerはget()で同期的に取得を試みます
-    encrypted = manager.get(COOKIE_NAME)
+    # st.context.cookies からクッキーを読み取る（Streamlit 1.37+）
+    try:
+        from urllib.parse import unquote
+        
+        cookies = st.context.cookies
+        encrypted = cookies.get(COOKIE_NAME)
+        
+        if encrypted:
+            # URLデコードしてから復号（保存時にquote()でエンコードしているため）
+            decoded_encrypted = unquote(encrypted)
+            tokens = _decrypt_tokens(decoded_encrypted)
+            if tokens:
+                st.session_state["cw_access_token"] = tokens["a"]
+                st.session_state["cw_refresh_token"] = tokens.get("r", "")
+                st.session_state["cw_expires_at"] = tokens.get("e", 0)
+                return True
+    except Exception as e:
+        # st.context.cookies が利用できない場合（古いバージョンなど）
+        st.warning(f"クッキー読み取りエラー: {e}")
     
-    if not encrypted:
-        return False
-    
-    tokens = _decrypt_tokens(encrypted)
-    if tokens is None:
-        # 復号失敗、クッキー削除
-        manager.delete(COOKIE_NAME)
-        return False
-    
-    st.session_state["cw_access_token"] = tokens["a"]
-    st.session_state["cw_refresh_token"] = tokens.get("r", "")
-    st.session_state["cw_expires_at"] = tokens.get("e", 0)
-    
-    return True
+    return False
 
 
 def clear_tokens():
     """トークンをセッションとクッキーから削除（ログアウト）"""
-    for key in ["cw_access_token", "cw_refresh_token", "cw_expires_at"]:
+    for key in ["cw_access_token", "cw_refresh_token", "cw_expires_at", 
+                "cw_cookie_load_attempted", "cw_cookie_saved", "cw_encrypted_token"]:
         if key in st.session_state:
             del st.session_state[key]
     
-    manager = _get_cookie_manager()
-    manager.delete(COOKIE_NAME)
+    # JavaScriptでクッキーを削除（parent.document を使用）
+    delete_script = f"""
+    <script>
+        try {{
+            parent.document.cookie = "{COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure";
+            console.log("Cookie deleted successfully");
+        }} catch (e) {{
+            console.error("Failed to delete cookie:", e);
+            document.cookie = "{COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure";
+        }}
+    </script>
+    """
+    st.components.v1.html(delete_script, height=0, width=0)
 
 
 # ====== API関連 ======
@@ -417,6 +460,16 @@ def post_files_to_room(files_data: list[tuple[str, bytes, str]], message: str = 
         r.raise_for_status()
     
     return True
+
+
+def show_logout_button():
+    """
+    ログアウトボタンを表示（デバッグ・管理用）
+    """
+    if st.button("ChatWorkからログアウト"):
+        clear_tokens()
+        st.success("ログアウトしました。")
+        st.rerun()
 
 
 
