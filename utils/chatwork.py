@@ -211,6 +211,12 @@ def load_tokens_from_cookie() -> bool:
     if "cw_access_token" in st.session_state:
         return True
     
+    # ログアウト直後の場合、Cookie復元をスキップしCookie削除JSを再描画
+    # （clear_tokens → st.rerun の間にJSが実行されないレースコンディション対策）
+    if st.session_state.pop("cw_logging_out", False):
+        _render_delete_cookie_js()
+        return False
+    
     # st.context.cookies からクッキーを読み取る（Streamlit 1.37+）
     try:
         from urllib.parse import unquote
@@ -246,16 +252,8 @@ def load_tokens_from_cookie() -> bool:
     return False
 
 
-def clear_tokens():
-    """トークンをセッションとクッキーから削除（ログアウト）"""
-    for key in ["cw_access_token", "cw_refresh_token", "cw_expires_at", 
-                "cw_cookie_load_attempted", "cw_cookie_saved", "cw_encrypted_token"]:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    # JavaScriptでクッキーを削除
-    # Azure環境ではiframeのparent.document.cookieアクセスが制限される場合があるため
-    # 複数のpath/domain/Secureフラグの組み合わせで削除を試行
+def _render_delete_cookie_js():
+    """クッキー削除用JavaScriptを描画する共通関数"""
     delete_script = f"""
     <script>
         (function() {{
@@ -285,6 +283,20 @@ def clear_tokens():
     </script>
     """
     st.components.v1.html(delete_script, height=0, width=0)
+
+
+def clear_tokens():
+    """トークンをセッションとクッキーから削除（ログアウト）"""
+    # ログアウトフラグを設定（rerun後のCookie復元を防止）
+    st.session_state["cw_logging_out"] = True
+    
+    for key in ["cw_access_token", "cw_refresh_token", "cw_expires_at", 
+                "cw_cookie_load_attempted", "cw_cookie_saved", "cw_encrypted_token"]:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # JavaScriptでクッキーを削除
+    _render_delete_cookie_js()
 
 
 # ====== API関連 ======
