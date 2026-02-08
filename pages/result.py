@@ -375,6 +375,8 @@ def show(selected_date):
                         st.info("投稿するファイルがありません。先に各Exportボタンを押してファイルを生成してください。")
             except Exception as e:
                 st.error(f"ChatWork API エラー: {e}")
+                st.info("トークンが無効な場合は、ログアウトしてから再度ログインしてください。")
+                chatwork.show_logout_button()
         
         st.markdown("---")
         st.write("投票結果")

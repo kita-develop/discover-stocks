@@ -223,9 +223,21 @@ def load_tokens_from_cookie() -> bool:
             decoded_encrypted = unquote(encrypted)
             tokens = _decrypt_tokens(decoded_encrypted)
             if tokens:
+                expires_at = tokens.get("e", 0)
+                refresh_token = tokens.get("r", "")
+                
+                # リフレッシュトークンの有効期限チェック（14日超過なら破棄）
+                # expires_at はアクセストークンの期限だが、それから14日以上経過していれば
+                # リフレッシュトークンも確実に期限切れ
+                max_refresh_age = COOKIE_MAX_AGE_DAYS * 24 * 3600  # 14日（秒）
+                if expires_at > 0 and time.time() > expires_at + max_refresh_age:
+                    # トークンが完全に期限切れ → クッキーも削除
+                    clear_tokens()
+                    return False
+                
                 st.session_state["cw_access_token"] = tokens["a"]
-                st.session_state["cw_refresh_token"] = tokens.get("r", "")
-                st.session_state["cw_expires_at"] = tokens.get("e", 0)
+                st.session_state["cw_refresh_token"] = refresh_token
+                st.session_state["cw_expires_at"] = expires_at
                 return True
     except Exception as e:
         # st.context.cookies が利用できない場合（古いバージョンなど）
@@ -241,16 +253,35 @@ def clear_tokens():
         if key in st.session_state:
             del st.session_state[key]
     
-    # JavaScriptでクッキーを削除（parent.document を使用）
+    # JavaScriptでクッキーを削除
+    # Azure環境ではiframeのparent.document.cookieアクセスが制限される場合があるため
+    # 複数のpath/domain/Secureフラグの組み合わせで削除を試行
     delete_script = f"""
     <script>
-        try {{
-            parent.document.cookie = "{COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure";
-            console.log("Cookie deleted successfully");
-        }} catch (e) {{
-            console.error("Failed to delete cookie:", e);
-            document.cookie = "{COOKIE_NAME}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure";
-        }}
+        (function() {{
+            var name = "{COOKIE_NAME}";
+            var expiry = "expires=Thu, 01 Jan 1970 00:00:00 GMT";
+            var paths = ["/", ""];
+            var hostname = window.location.hostname;
+            var domains = [hostname, "." + hostname, ""];
+            var docs = [];
+            try {{ docs.push(parent.document); }} catch(e) {{}}
+            docs.push(document);
+            
+            docs.forEach(function(doc) {{
+                paths.forEach(function(p) {{
+                    domains.forEach(function(d) {{
+                        var cookie = name + "=; " + expiry;
+                        if (p) cookie += "; path=" + p;
+                        if (d) cookie += "; domain=" + d;
+                        // Secure付きとなしの両方を試行
+                        try {{ doc.cookie = cookie + "; SameSite=Lax; Secure"; }} catch(e) {{}}
+                        try {{ doc.cookie = cookie + "; SameSite=Lax"; }} catch(e) {{}}
+                    }});
+                }});
+            }});
+            console.log("Cookie deletion attempted with multiple combinations");
+        }})();
     </script>
     """
     st.components.v1.html(delete_script, height=0, width=0)
@@ -269,27 +300,36 @@ def _refresh_if_needed():
         return
     if time.time() < st.session_state["cw_expires_at"] - 60:
         return
-    if "cw_refresh_token" not in st.session_state:
-        return
+    # refresh_token が存在しない、または空文字の場合はリフレッシュ不可
+    if not st.session_state.get("cw_refresh_token"):
+        clear_tokens()
+        raise Exception("リフレッシュトークンがありません。再度ログインしてください。")
 
     basic = _b64(f"{CLIENT_ID}:{CLIENT_SECRET}")
-    r = requests.post(
-        TOKEN_URL,
-        headers={"authorization": f"Basic {basic}"},
-        data={
-            "grant_type": "refresh_token",
-            "refresh_token": st.session_state["cw_refresh_token"],
-            "scope": SCOPES,
-        },
-        timeout=30,
-    )
-    r.raise_for_status()
-    tok = r.json()
-    st.session_state["cw_access_token"] = tok["access_token"]
-    st.session_state["cw_expires_at"] = time.time() + int(tok.get("expires_in", 1800))
-    
-    # 更新後クッキーにも保存
-    save_tokens_to_cookie()
+    try:
+        r = requests.post(
+            TOKEN_URL,
+            headers={"authorization": f"Basic {basic}"},
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": st.session_state["cw_refresh_token"],
+                "scope": SCOPES,
+            },
+            timeout=30,
+        )
+        r.raise_for_status()
+        tok = r.json()
+        st.session_state["cw_access_token"] = tok["access_token"]
+        st.session_state["cw_expires_at"] = time.time() + int(tok.get("expires_in", 1800))
+        
+        # 更新後クッキーにも保存
+        st.session_state["cw_cookie_saved"] = False  # 強制的に再保存
+        save_tokens_to_cookie()
+    except requests.exceptions.HTTPError as e:
+        # リフレッシュ失敗 → トークンをクリアして再ログインを促す
+        status_code = e.response.status_code if e.response is not None else "unknown"
+        clear_tokens()
+        raise Exception(f"トークンの更新に失敗しました（{status_code}）。再度ログインしてください。") from e
 
 
 def is_logged_in() -> bool:
