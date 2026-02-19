@@ -1,7 +1,7 @@
 import streamlit as st
 from utils.common import format_vote_data_with_thresh
 from utils.db import get_connection
-from utils import chatwork
+
 import csv
 from io import StringIO
 import pandas as pd
@@ -118,8 +118,7 @@ def show(selected_date):
         sorted_results_with_thresh = format_vote_data_with_thresh(results)
         if sorted_results_with_thresh:
             filename = f"投票結果{selected_date.strftime('%Y%m%d')}_票数付.txt"
-            # ChatWork投稿用にファイルデータを保存
-            st.session_state["cw_txt_file"] = (filename, sorted_results_with_thresh.encode("utf-8"), "text/plain")
+
             with row1_col2:
                 st.download_button("銘柄コードExport(票数付)", data=sorted_results_with_thresh, file_name=filename, mime="text/plain")
         
@@ -228,8 +227,7 @@ def show(selected_date):
             fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
             wordcloud_filename = f"銘柄投票{selected_date.strftime('%Y%m%d')}.png"
             wordcloud_data = buf.getvalue()
-            # ChatWork投稿用にファイルデータを保存
-            st.session_state["cw_wordcloud_file"] = (wordcloud_filename, wordcloud_data, "image/png")
+
             st.download_button(
                 label="銘柄コードワードクラウド画像保存",
                 data=wordcloud_data,
@@ -312,8 +310,7 @@ def show(selected_date):
             ranking_fig.savefig(ranking_buf, format="png", bbox_inches='tight', pad_inches=0.1)
             ranking_filename = f"銘柄投票ランキング{selected_date.strftime('%Y%m%d')}.png"
             ranking_data = ranking_buf.getvalue()
-            # ChatWork投稿用にファイルデータを保存
-            st.session_state["cw_ranking_file"] = (ranking_filename, ranking_data, "image/png")
+
             
             st.download_button(
                 label="投票結果上位20位保存",
@@ -325,59 +322,13 @@ def show(selected_date):
         except ImportError:
             st.error("wordcloudおよびmatplotlibライブラリが必要です。'pip install wordcloud matplotlib'でインストールしてください。")
         
-        # ====== ChatWork投稿セクション ======
+        # ChatWork投稿リンク
         st.markdown("---")
-        st.subheader("ChatWorkに投稿")
-        
-        # 注意: OAuthコールバック処理はapp.pyで実行済み
-        
-        if not chatwork.is_logged_in():
-            # ログインボタンに現在のページと日付を渡す
-            chatwork.show_login_button(return_page="result", return_date=selected_date.strftime("%Y%m%d"))
-        else:
-            try:
-                if not chatwork.is_room_member():
-                    st.warning("このルームのメンバーではないため、投稿できません。先にChatWorkでルームに参加してください。")
-                    chatwork.show_logout_button()
-                else:
-                    # ログインユーザー情報を取得
-                    profile = chatwork.get_my_profile()
-                    user_name = profile.get("name", "不明") if profile else "不明"
-                    
-                    col_status, col_logout = st.columns([3, 1])
-                    with col_status:
-                        st.success(f"ログインOK（{user_name}）& ルームメンバー確認OK ✅")
-                    with col_logout:
-                        chatwork.show_logout_button()
-                    
-                    # 投稿するファイルの確認
-                    files_to_post = []
-                    if "cw_txt_file" in st.session_state:
-                        files_to_post.append(st.session_state["cw_txt_file"])
-                    if "cw_wordcloud_file" in st.session_state:
-                        files_to_post.append(st.session_state["cw_wordcloud_file"])
-                    if "cw_ranking_file" in st.session_state:
-                        files_to_post.append(st.session_state["cw_ranking_file"])
-                    
-                    if files_to_post:
-                        st.write(f"投稿予定ファイル: {len(files_to_post)}件")
-                        for fname, _, _ in files_to_post:
-                            st.write(f"  - {fname}")
-                        
-                        if st.button("ChatWorkに投稿", type="primary"):
-                            try:
-                                message = f"投票結果 ({selected_date_str})"
-                                chatwork.post_files_to_room(files_to_post, message)
-                                st.success("ChatWorkに投稿しました！")
-                            except Exception as e:
-                                st.error(f"投稿エラー: {e}")
-                    else:
-                        st.info("投稿するファイルがありません。先に各Exportボタンを押してファイルを生成してください。")
-            except Exception as e:
-                st.error(f"ChatWork API エラー: {e}")
-                st.info("トークンが無効な場合は、ログアウトしてから再度ログインしてください。")
-                chatwork.show_logout_button()
-        
+        date_str = selected_date.strftime("%Y%m%d")
+        st.markdown(
+            f'📤 <a href="./?page=chatwork_post&date={date_str}" target="_self">ChatWorkに投稿する</a>',
+            unsafe_allow_html=True
+        )
         st.markdown("---")
         st.write("投票結果")
         header_cols = st.columns([0.5, 1, 2, 1])
