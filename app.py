@@ -2,25 +2,28 @@ import streamlit as st
 from utils.db import init_db
 from utils.common import get_date_from_params
 from utils import chatwork
-from pages import top, survey, vote, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl, score_ranking
+from pages import top, survey, vote, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl, score_ranking, chatwork_post
 
 # DB初期化
 init_db()
 
-# ChatWork OAuthコールバック処理（ページルーティング前に実行）
-oauth_result = chatwork.handle_oauth_callback()
-if oauth_result is not None:
-    # 認証成功、元のページにリダイレクト
-    return_page = oauth_result.get("page", "result")
-    return_date = oauth_result.get("date", "")
-    if return_page:
-        redirect_params = {"page": return_page}
-        if return_date:
-            redirect_params["date"] = return_date
-        st.query_params.clear()
-        for k, v in redirect_params.items():
-            st.query_params[k] = v
-        st.rerun()
+# ChatWork OAuthコールバック処理（OAuthリダイレクト時のみ実行）
+# パフォーマンス改善: code/errorパラメータがない通常アクセスではスキップ
+_qp_raw = st.query_params
+if _qp_raw.get("code") or _qp_raw.get("error"):
+    oauth_result = chatwork.handle_oauth_callback()
+    if oauth_result is not None:
+        # 認証成功、元のページにリダイレクト
+        return_page = oauth_result.get("page", "chatwork_post")
+        return_date = oauth_result.get("date", "")
+        if return_page:
+            redirect_params = {"page": return_page}
+            if return_date:
+                redirect_params["date"] = return_date
+            st.query_params.clear()
+            for k, v in redirect_params.items():
+                st.query_params[k] = v
+            st.rerun()
 
 # URLパラメータから対象ページとdateを取得
 query_params = st.query_params
@@ -39,6 +42,7 @@ st.sidebar.markdown(f'<a href="./?page=top&date={date_str}" target="_self">ト�
 st.sidebar.markdown(f'<a href="./?page=survey&date={date_str}" target="_self">① 銘柄コード登録</a>', unsafe_allow_html=True)
 st.sidebar.markdown(f'<a href="./?page=vote&date={date_str}" target="_self">② 銘柄投票</a>', unsafe_allow_html=True)
 st.sidebar.markdown(f'<a href="./?page=result&date={date_str}" target="_self">③ 投票結果確認</a>', unsafe_allow_html=True)
+st.sidebar.markdown(f'<a href="./?page=chatwork_post&date={date_str}" target="_self">③-2 ChatWork投稿</a>', unsafe_allow_html=True)
 st.sidebar.markdown(f'<a href="./?page=result_graph&date={date_str}" target="_self">④ 投票結果の推移</a>', unsafe_allow_html=True)
 st.sidebar.markdown(f'<a href="./?page=stock_evaluation&date={date_str}" target="_self">⑤ 投票結果株価評価</a>', unsafe_allow_html=True)
 st.sidebar.markdown(f'<a href="./?page=investment_simulation&date={date_str}" target="_self">⑥ 投資シミュレーション</a>', unsafe_allow_html=True)
@@ -62,6 +66,8 @@ elif page == 'vote':
     vote.show(selected_date)
 elif page == 'result':
     result.show(selected_date)
+elif page == 'chatwork_post':
+    chatwork_post.show(selected_date)
 elif page == 'result_graph':
     result_graph.show(selected_date)
 elif page == 'stock_evaluation':
