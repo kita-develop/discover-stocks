@@ -127,40 +127,46 @@ def show(selected_date):
         3. 選択が完了したら下部の「投票」ボタンを押してください
         """)
         st.markdown("---")
-        
-        st.write("最新の集計結果（投票前のアンケート集計）")
-        
-        # 表形式で表示
-        header_cols = st.columns([0.5, 1, 1, 1])
-        header_cols[0].write("No.")
-        header_cols[1].write("銘柄コード投票")
-        header_cols[2].write("銘柄名")
-        header_cols[3].write("アンケート票数")
-        
-        for index, row in enumerate(sorted_results, 1):
-            stock_code, survey_count, stock_name = row
-            display_name = stock_name or stock_code  # stock_nameがNoneの場合はstock_codeを使用
-            url = f"https://jp.tradingview.com/chart/?symbol={stock_code}"
-            stock_name_link = f'<a href="{url}" target="_blank" rel="noopener noreferrer">{display_name}</a>'
-            
-            cols = st.columns([0.5, 1, 1, 1])
-            cols[0].write(f"{index}")
-            cols[1].checkbox(stock_code, key=f"checkbox_{stock_code}")
-            cols[2].markdown(stock_name_link, unsafe_allow_html=True)
-            cols[3].write(survey_count)
-        
-        st.markdown("---")
+
         # 投票ボタンの状態管理
         if 'vote_submitted' not in st.session_state:
             st.session_state.vote_submitted = False
-        
-        if not st.session_state.vote_submitted:
-            if st.button("投票"):
-                st.session_state.vote_submitted = True  # ボタンがクリックされたことを記録
-                with st.spinner("投票を保存中..."):
-                    save_vote_data(selected_date_str, sorted_results)
-        else:
+        submitted = False
+
+        st.write("最新の集計結果（投票前のアンケート集計）")
+        with st.form("vote_form"):
+            # 表形式で表示
+            header_cols = st.columns([0.5, 1, 1, 1])
+            header_cols[0].write("No.")
+            header_cols[1].write("銘柄コード投票")
+            header_cols[2].write("銘柄名")
+            header_cols[3].write("アンケート票数")
+
+            for index, row in enumerate(sorted_results, 1):
+                stock_code, survey_count, stock_name = row
+                display_name = stock_name or stock_code  # stock_nameがNoneの場合はstock_codeを使用
+                url = f"https://jp.tradingview.com/chart/?symbol={stock_code}"
+                stock_name_link = f'<a href="{url}" target="_blank" rel="noopener noreferrer">{display_name}</a>'
+
+                cols = st.columns([0.5, 1, 1, 1])
+                cols[0].write(f"{index}")
+                cols[1].checkbox(stock_code, key=f"checkbox_{stock_code}")
+                cols[2].markdown(stock_name_link, unsafe_allow_html=True)
+                cols[3].write(survey_count)
+
+            st.markdown("---")
+
+            # フォーム専用の送信ボタン（WebSocket通信軽減）
+            submitted = st.form_submit_button("投票")
+
+        # 投票チェック
+        if submitted and not st.session_state.vote_submitted:
+            st.session_state.vote_submitted = True  # ボタンがクリックされたことを記録
+            with st.spinner("投票を保存中..."):
+                save_vote_data(selected_date_str, sorted_results)
+        elif st.session_state.vote_submitted:
             st.info("投票は完了しています。")
+
     else:
         st.write("対象日のデータはまだありません。")
 
