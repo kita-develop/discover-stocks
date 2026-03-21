@@ -342,10 +342,11 @@ def show(selected_date):
             display_name = stock_name or stock_code  # stock_nameがNoneの場合はstock_codeを使用
             url = f"https://jp.tradingview.com/chart/?symbol={stock_code}"
             stock_name_link = f'<a href="{url}" target="_blank" rel="noopener noreferrer">{display_name}</a>'
-            
+            stock_code_mark = f'<span data-stock-code="{stock_code}">{stock_code}</span>'
+
             cols = st.columns([0.5, 1, 2, 1])
             cols[0].write(f"{index}")
-            cols[1].write(stock_code)
+            cols[1].markdown(stock_code_mark, unsafe_allow_html=True)
             cols[2].markdown(stock_name_link, unsafe_allow_html=True)
             
             percentage = (vote_count / vote_sessions * 100) if vote_sessions > 0 else 0
