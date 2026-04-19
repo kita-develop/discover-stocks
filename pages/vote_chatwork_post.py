@@ -8,31 +8,29 @@ import streamlit as st
 from utils.common import format_vote_data_with_thresh
 from utils.db import get_connection
 from utils import chatwork
-from io import BytesIO
-import platform
-import os
 
 
 def _get_survey_data(selected_date_str):
     """対象日の投票結果データと投票セッション数を取得"""
     conn = get_connection()
-    c = conn.cursor()
+    try:
+        c = conn.cursor()
 
-    # surveyテーブルから対象日の各銘柄のアンケート票数を集計
-    c.execute(
-        """
-        SELECT s.stock_code, COUNT(*) as survey_count, m.stock_name
-        FROM survey s
-        LEFT JOIN stock_master m ON s.stock_code = m.stock_code
-        WHERE s.survey_date = ?
-        GROUP BY s.stock_code
-        """,
-        (selected_date_str,)
-    )
-    results = c.fetchall()
-    conn.close()
-
-    return results
+        # surveyテーブルから対象日の各銘柄のアンケート票数を集計
+        c.execute(
+            """
+            SELECT s.stock_code, COUNT(*) as survey_count, m.stock_name
+            FROM survey s
+            LEFT JOIN stock_master m ON s.stock_code = m.stock_code
+            WHERE s.survey_date = ?
+            GROUP BY s.stock_code
+            """,
+            (selected_date_str,)
+        )
+        results = c.fetchall()
+        return results
+    finally:
+        conn.close()
 
 
 def _generate_files(results, selected_date, selected_date_str):
@@ -41,8 +39,9 @@ def _generate_files(results, selected_date, selected_date_str):
 
     # 1. テキストファイル（票数付）
     sorted_results_with_thresh = format_vote_data_with_thresh(results)
-    filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}_票数順_票数付.txt"
-    files_to_post.append((filename, sorted_results_with_thresh.encode("utf-8"), "text/plain"))
+    if sorted_results_with_thresh:
+        filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}_票数順_票数付.txt"
+        files_to_post.append((filename, sorted_results_with_thresh.encode("utf-8"), "text/plain"))
 
     return files_to_post
 
