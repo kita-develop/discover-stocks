@@ -170,7 +170,7 @@ def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
     date_str = selected_date.strftime("%Y%m%d")
     
-    st.title("ChatWork投稿")
+    st.title("投票結果 ChatWork投稿")
     st.write(f"【対象日】{selected_date_str}")
     
     # 投票結果データ取得
