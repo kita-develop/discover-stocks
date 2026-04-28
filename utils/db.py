@@ -1,6 +1,7 @@
 import sqlite3
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import streamlit as st
 
 def get_db_path():
@@ -102,7 +103,7 @@ def init_db():
     conn.close()
 
     # キャッシュの有効期限を確認するために実行時刻をログ出力
-    st.write(f"DBキャッシュ: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    st.write(f"DBキャッシュ: {datetime.now(ZoneInfo('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S JST')}")
 
 def init_price_cache_table():
     """株価キャッシュテーブルを初期化"""

@@ -1,4 +1,5 @@
-from datetime import datetime, date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import yfinance as yf
 from utils.db import get_connection
 
@@ -29,8 +30,8 @@ def get_date_from_params(query_params):
         try:
             return datetime.strptime(date_param, "%Y%m%d").date()
         except ValueError:
-            return date.today()
-    return date.today()
+            return datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    return datetime.now(ZoneInfo("Asia/Tokyo")).date()
 
 
 THRESHOLDS=[100, 50, 30, 20, 10, 5]

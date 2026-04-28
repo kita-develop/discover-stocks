@@ -83,7 +83,7 @@ def _generate_files(results, vote_sessions, selected_date, selected_date_str):
     # 1. テキストファイル（票数付）
     sorted_results_with_thresh = format_vote_data_with_thresh(results)
     if sorted_results_with_thresh:
-        filename = f"投票結果{selected_date.strftime('%Y%m%d')}_票数付.txt"
+        filename = f"投票結果_{selected_date.strftime('%Y%m%d')}_票数付.txt"
         files_to_post.append((filename, sorted_results_with_thresh.encode("utf-8"), "text/plain"))
     
     # 2. ワードクラウド画像 & 3. ランキング画像
@@ -110,7 +110,7 @@ def _generate_files(results, vote_sessions, selected_date, selected_date_str):
         buf_wc = BytesIO()
         fig_wc.savefig(buf_wc, format="png", bbox_inches='tight', pad_inches=0.1)
         plt.close(fig_wc)
-        wordcloud_filename = f"銘柄投票{selected_date.strftime('%Y%m%d')}.png"
+        wordcloud_filename = f"投票結果_{selected_date.strftime('%Y%m%d')}.png"
         files_to_post.append((wordcloud_filename, buf_wc.getvalue(), "image/png"))
         
         # ランキング画像
@@ -157,7 +157,7 @@ def _generate_files(results, vote_sessions, selected_date, selected_date_str):
         buf_rank = BytesIO()
         fig_table.savefig(buf_rank, format="png", bbox_inches='tight', pad_inches=0.1)
         plt.close(fig_table)
-        ranking_filename = f"銘柄投票ランキング{selected_date.strftime('%Y%m%d')}.png"
+        ranking_filename = f"投票結果ランキング_{selected_date.strftime('%Y%m%d')}.png"
         files_to_post.append((ranking_filename, buf_rank.getvalue(), "image/png"))
         
     except ImportError:
