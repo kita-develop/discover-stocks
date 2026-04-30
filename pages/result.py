@@ -111,13 +111,13 @@ def show(selected_date):
         # テキストファイルExportボタン
         codes = [row[0] for row in results]
         file_content = "\n".join(codes)
-        filename = f"投票結果{selected_date.strftime('%Y%m%d')}.txt"
+        filename = f"投票結果_{selected_date.strftime('%Y%m%d')}.txt"
         with row1_col1:
             st.download_button("銘柄コードExport", data=file_content, file_name=filename, mime="text/plain")
 
         sorted_results_with_thresh = format_vote_data_with_thresh(results)
         if sorted_results_with_thresh:
-            filename = f"投票結果{selected_date.strftime('%Y%m%d')}_票数付.txt"
+            filename = f"投票結果_{selected_date.strftime('%Y%m%d')}_票数付.txt"
 
             with row1_col2:
                 st.download_button("銘柄コードExport(票数付)", data=sorted_results_with_thresh, file_name=filename, mime="text/plain")
@@ -138,7 +138,7 @@ def show(selected_date):
         csv_str = output.getvalue()
         csv_bytes = csv_str.encode('shift-jis', errors='replace')
         
-        csv_filename = f"投票結果{selected_date.strftime('%Y%m%d')}.csv"
+        csv_filename = f"投票結果_{selected_date.strftime('%Y%m%d')}.csv"
         with row2_col1:
             st.download_button(
                 "投票結果CSV Export",
@@ -148,7 +148,7 @@ def show(selected_date):
             )
         
         # Excelファイルのエクスポート
-        excel_filename = f"投票結果{selected_date.strftime('%Y%m%d')}.xlsx"
+        excel_filename = f"投票結果_{selected_date.strftime('%Y%m%d')}.xlsx"
         
         # DataFrameを作成（URLなし）
         excel_data = [(row[0], row[1], row[2] or row[0]) for row in results]
@@ -225,7 +225,7 @@ def show(selected_date):
             # ワードクラウド画像のダウンロードボタン
             buf = BytesIO()
             fig.savefig(buf, format="png", bbox_inches='tight', pad_inches=0.1)
-            wordcloud_filename = f"銘柄投票{selected_date.strftime('%Y%m%d')}.png"
+            wordcloud_filename = f"投票結果_{selected_date.strftime('%Y%m%d')}.png"
             wordcloud_data = buf.getvalue()
 
             st.download_button(
@@ -308,7 +308,7 @@ def show(selected_date):
             
             ranking_buf = BytesIO()
             ranking_fig.savefig(ranking_buf, format="png", bbox_inches='tight', pad_inches=0.1)
-            ranking_filename = f"銘柄投票ランキング{selected_date.strftime('%Y%m%d')}.png"
+            ranking_filename = f"投票結果ランキング_{selected_date.strftime('%Y%m%d')}.png"
             ranking_data = ranking_buf.getvalue()
 
             
