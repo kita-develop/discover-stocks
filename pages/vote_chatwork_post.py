@@ -40,7 +40,7 @@ def _generate_files(results, selected_date, selected_date_str):
     # 1. テキストファイル（票数付）
     sorted_results_with_thresh = format_vote_data_with_thresh(results)
     if sorted_results_with_thresh:
-        filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}_票数順_票数付.txt"
+        filename = f"銘柄発掘_{selected_date.strftime('%Y%m%d')}_票数順_票数付.txt"
         files_to_post.append((filename, sorted_results_with_thresh.encode("utf-8"), "text/plain"))
 
     return files_to_post

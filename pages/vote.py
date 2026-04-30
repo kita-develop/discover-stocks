@@ -45,13 +45,13 @@ def show(selected_date):
         # テキストファイルExportボタン
         codes = [row[0] for row in sorted_results]
         file_content = "\n".join(codes)
-        filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}{sort_suffix}.txt"
+        filename = f"銘柄発掘_{selected_date.strftime('%Y%m%d')}{sort_suffix}.txt"
         with row1_col1:
             st.download_button("銘柄コードExport", data=file_content, file_name=filename, mime="text/plain")
 
         if sorted_results_with_thresh:
             with row1_col2:
-                filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}{sort_suffix}_票数付.txt"
+                filename = f"銘柄発掘_{selected_date.strftime('%Y%m%d')}{sort_suffix}_票数付.txt"
                 st.download_button("銘柄コードExport(票数付)", data=sorted_results_with_thresh, file_name=filename, mime="text/plain")
         
         row2_col1, row2_col2 = st.columns(2)
@@ -70,7 +70,7 @@ def show(selected_date):
         csv_str = output.getvalue()
         csv_bytes = csv_str.encode('shift-jis', errors='replace')
         
-        csv_filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}{sort_suffix}.csv"
+        csv_filename = f"銘柄発掘_{selected_date.strftime('%Y%m%d')}{sort_suffix}.csv"
         with row2_col1:
             st.download_button(
                 "集計結果CSV Export",
@@ -80,7 +80,7 @@ def show(selected_date):
             )
         
         # Excelファイルのエクスポート
-        excel_filename = f"銘柄発掘{selected_date.strftime('%Y%m%d')}{sort_suffix}.xlsx"
+        excel_filename = f"銘柄発掘_{selected_date.strftime('%Y%m%d')}{sort_suffix}.xlsx"
         
         # DataFrameを作成（URLなし）
         excel_data = [(row[0], row[1], row[2] or row[0]) for row in sorted_results]
