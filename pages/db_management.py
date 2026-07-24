@@ -30,7 +30,11 @@ def show_export():
     tables = {
         'stock_master': pd.read_sql_query("SELECT * FROM stock_master", conn),
         'survey': pd.read_sql_query("SELECT * FROM survey", conn),
-        'vote': pd.read_sql_query("SELECT * FROM vote", conn)
+        'vote': pd.read_sql_query("SELECT * FROM vote", conn),
+        'journal_vote_candidate': pd.read_sql_query("SELECT * FROM journal_vote_candidate", conn),
+        'journal_vote_base': pd.read_sql_query("SELECT * FROM journal_vote_base", conn),
+        'journal_vote': pd.read_sql_query("SELECT * FROM journal_vote", conn),
+        'journal_vote_feedback': pd.read_sql_query("SELECT * FROM journal_vote_feedback", conn)
     }
     
     conn.close()

@@ -1,5 +1,10 @@
-from datetime import datetime
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+import base64
+import os
+import streamlit as st
+import uuid
 import yfinance as yf
 from utils.db import get_connection
 
@@ -7,6 +12,24 @@ DUMMY_STOCK_CODE = "0000"  # 銘柄発掘、投票時の「該当なし」のダ
 MAX_SETS = 7               # 銘柄発掘アンケートの入力セット数
 MAX_VOTE_SELECTION = 10    # 集計ページでのチェックボックスの最大選択数
 STOCKS_PER_PAGE = 100      # 銘柄マスタ一覧の1ページあたりの表示件数
+JOURNAL_CANDIDATE_COUNT = 5 # ジャーナリング投票の銘柄候補数
+
+## ジャーナリング投票のアンケートの選択肢とスコアの範囲
+QUESTIONNAIRE_VERSION = 1 ## 回答バージョン
+JOURNAL_SCORE_OPTIONS = { 1: "ランダム", 2: "ランダム", 3: "ややランダム", 4: "ややランダム", 5: "中間", 6: "中間", 7: "やや規律的", 8: "やや規律的", 9: "規律正しい", 10: "規律正しい" } ## 規律可能性のスコアラベル
+WAVE_POSITION_OPTIONS = { "bottom": "初動", "middle": "中盤", "top": "終盤", "unknown": "不明" } ## 大きな波の中の位置の選択肢
+BASELINE_DIRECTION_OPTIONS = { "down": "下落", "unknown":"方向性不明確", "up": "上昇" } ## ベースラインの方向性の選択肢
+VOLATILITY_SCORE_OPTIONS = { 1: "非常に小さい", 2: "小さい", 3: "中間", 4: "大きい", 5: "非常に大きい" } ## ボラティリティのスコアラベル
+EXCEPTION_OPTIONS = { 0: "不要", 1: "必要" } ## 例外的な判断の選択肢
+LEADER_EXISTS_OPTIONS = { 0: "ない", 1: "ある"} ## 先導株の選択肢
+MARKET_STATE_SCORE_OPTIONS = { 1: "簡単", 2: "やや簡単", 3: "中間", 4: "やや難しい", 5: "難しい" } ## 相場のスコアラベル
+CONFIDENCE_SCORE_OPTIONS = { 1: "自信がない", 2: "やや自信がない", 3: "中間", 4: "やや自信がある", 5: "全能感がある" } ## 自信度スコアラベル
+FEELING_SCORE_OPTIONS = { 1: "不安", 2: "やや不安", 3: "中間", 4: "やや安心", 5: "安心している" } ## 自信度スコアラベル
+POSITION_RATIO_MIN = 0     ## ポジション量のスコアの最小値
+POSITION_RATIO_MAX = 150   ## ポジション量のスコアの最大値
+POSITION_RATIO_GROUP = 30  ## ポジション量の表示区切り
+TEACHER_LOGIN_TIME_MINUTES = 60   ## 講師フィードバックのログイン有効時間（分）
+JOURNAL_COOKIE_EXPIRE_DAYS = 730  ## ジャーナリング投票結果参照のためのCookie期限 (日)
 
 def get_ticker(stock_code):
     """
@@ -124,3 +147,45 @@ def get_stock_name(stock_code):
     conn.close()
     # どちらも見つからない場合は銘柄コードを返す
     return stock_code
+
+
+## 文字列の暗号化
+def encrypt_string(plaintext, JOURNAL_ENCRYPTION_KEY):
+    aesgcm = AESGCM(JOURNAL_ENCRYPTION_KEY)
+    nonce = os.urandom(12)
+    ciphertext = aesgcm.encrypt(nonce, plaintext.encode(), None)
+    return base64.b64encode(nonce + ciphertext).decode()
+
+
+## 文字列の復号化
+def decrypt_string(encrypted_text, JOURNAL_ENCRYPTION_KEY):
+    aesgcm = AESGCM(JOURNAL_ENCRYPTION_KEY)
+    raw = base64.b64decode(encrypted_text)
+
+    nonce = raw[:12]
+    ciphertext = raw[12:]
+
+    return aesgcm.decrypt(nonce, ciphertext, None).decode()
+
+
+## ジャーナリング時のuuid取得
+def get_journal_vote_uuid():
+    ## 投票画面アクセス毎にUUIDを取得する
+    ## 久しぶりのアクセスで期限切れにならないように都度更新する。
+    ## CookieManagerでアクセスする st.rerun() によってパフォーマンス劣化するため、JavaScriptでCookie更新する.
+    user_id = st.context.cookies.get("journal_vote_uuid")
+    if user_id is None:
+        user_id = str(uuid.uuid4())
+
+    ## 新規登録 + 現行UUIDの期限更新
+    expires = datetime.now() + timedelta(days=JOURNAL_COOKIE_EXPIRE_DAYS)
+    max_age = JOURNAL_COOKIE_EXPIRE_DAYS * 24 * 60 * 60
+    st.components.v1.html(
+        f"""
+        <script>
+        document.cookie = "{"journal_vote_uuid"}={user_id}; Max-Age={max_age}; Path=/; SameSite=Lax";
+        </script>
+        """,
+        height=0,
+    )
+    return user_id
