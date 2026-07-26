@@ -1,7 +1,7 @@
 import streamlit as st
 from datetime import datetime
 from utils.db import get_connection
-from utils.common import MAX_VOTE_SELECTION, format_vote_data_with_thresh
+from utils.common import MAX_VOTE_SELECTION, DUMMY_STOCK_CODE, format_vote_data_with_thresh
 import csv
 from io import StringIO
 import pandas as pd
@@ -151,7 +151,10 @@ def show(selected_date):
                 cols = st.columns([0.5, 1, 1, 1])
                 cols[0].write(f"{index}")
                 cols[1].checkbox(stock_code, key=f"checkbox_{stock_code}")
-                cols[2].markdown(stock_name_link, unsafe_allow_html=True)
+                if stock_code != DUMMY_STOCK_CODE:
+                    cols[2].markdown(stock_name_link, unsafe_allow_html=True)
+                else:
+                    cols[2].text(f"{display_name}")
                 cols[3].write(survey_count)
 
             st.markdown("---")

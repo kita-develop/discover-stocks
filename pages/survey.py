@@ -2,7 +2,7 @@ import streamlit as st
 import re
 from datetime import datetime
 from utils.db import get_connection
-from utils.common import MAX_SETS, get_stock_name
+from utils.common import MAX_SETS, DUMMY_STOCK_CODE, get_stock_name
 
 def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
@@ -11,12 +11,15 @@ def show(selected_date):
     st.write(f"【対象日】{selected_date_str}")
     
     # 入力方法の説明を追加
-    st.info("""
+    st.info(f"""
     【銘柄コード入力方法】
     1. 銘柄コードを入力（半角英数字・大文字とピリオドのみ）
     2. 「確定」ボタンをクリックして入力内容を確認
     3. 銘柄名のリンクをクリックすると、TradingViewでチャートを確認できます
     4. 全ての入力が完了したら下部の「送信」ボタンを押してください
+
+    【該当なしの場合】
+    銘柄コードへ「{DUMMY_STOCK_CODE}」をご入力ください
     """)
     st.markdown("---")
     
@@ -45,11 +48,14 @@ def show(selected_date):
             if f"confirmed_{i}" in st.session_state:
                 confirmed_code = st.session_state[f"confirmed_{i}"]
                 stock_name = st.session_state.get(f"stock_name_{i}", confirmed_code)
-                url = f"https://jp.tradingview.com/chart/?symbol={confirmed_code}"
-                st.markdown(
-                    f'<a href="{url}" target="_blank" rel="noopener noreferrer">{stock_name}のチャートを表示する</a>',
-                    unsafe_allow_html=True
-                )
+                if confirmed_code != DUMMY_STOCK_CODE:
+                    url = f"https://jp.tradingview.com/chart/?symbol={confirmed_code}"
+                    st.markdown(
+                        f'<a href="{url}" target="_blank" rel="noopener noreferrer">{stock_name}のチャートを表示する</a>',
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.text(f"{stock_name}")
             else:
                 st.write("")
     
@@ -75,4 +81,4 @@ def save_survey_data(selected_date_str):
     c.execute("PRAGMA optimize;")
 
     conn.commit()
-    conn.close() 
+    conn.close()
