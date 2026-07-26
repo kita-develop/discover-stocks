@@ -18,7 +18,7 @@ def show(selected_date):
     3. 銘柄名のリンクをクリックすると、TradingViewでチャートを確認できます
     4. 全ての入力が完了したら下部の「送信」ボタンを押してください
 
-    【該当なしの場合】  
+    【該当なしの場合】
     銘柄コードへ「{DUMMY_STOCK_CODE}」をご入力ください
     """)
     st.markdown("---")
@@ -39,7 +39,7 @@ def show(selected_date):
                     st.session_state[f"stock_name_{i}"] = stock_name
                     st.success(f"銘柄コード {code_input} を確定しました。")
                     # 銘柄名が銘柄コードと同じ場合は警告を表示
-                    if stock_name == code_input and code_input != DUMMY_STOCK_CODE:
+                    if stock_name == code_input:
                         st.warning("銘柄名が取得できませんでした。銘柄コードが正しいか確認してください。")
                 else:
                     st.error("入力が不正です。半角英数字・大文字とピリオドのみを使用してください。")
@@ -81,4 +81,4 @@ def save_survey_data(selected_date_str):
     c.execute("PRAGMA optimize;")
 
     conn.commit()
-    conn.close() 
+    conn.close()
