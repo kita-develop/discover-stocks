@@ -1,5 +1,5 @@
 import streamlit as st
-from utils.common import format_vote_data_with_thresh
+from utils.common import DUMMY_STOCK_CODE, format_vote_data_with_thresh
 from utils.db import get_connection
 
 import csv
@@ -347,7 +347,10 @@ def show(selected_date):
             cols = st.columns([0.5, 1, 2, 1])
             cols[0].write(f"{index}")
             cols[1].markdown(stock_code_mark, unsafe_allow_html=True)
-            cols[2].markdown(stock_name_link, unsafe_allow_html=True)
+            if stock_code != DUMMY_STOCK_CODE:
+                cols[2].markdown(stock_name_link, unsafe_allow_html=True)
+            else:
+                cols[2].text(f"{display_name}")
             
             percentage = (vote_count / vote_sessions * 100) if vote_sessions > 0 else 0
             cols[3].write(f"{vote_count} ({percentage:.1f}%)")
