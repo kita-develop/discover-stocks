@@ -3,10 +3,10 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 from utils.db import get_connection
 
-DUMMY_STOCK_CODE= "0000" # 銘柄発掘、投票時の「該当なし」のダミーコード
-MAX_SETS = 7            # 銘柄発掘アンケートの入力セット数
-MAX_VOTE_SELECTION = 10 # 集計ページでのチェックボックスの最大選択数
-STOCKS_PER_PAGE = 100   # 銘柄マスタ一覧の1ページあたりの表示件数
+DUMMY_STOCK_CODE = "0000"  # 銘柄発掘、投票時の「該当なし」のダミーコード
+MAX_SETS = 7               # 銘柄発掘アンケートの入力セット数
+MAX_VOTE_SELECTION = 10    # 集計ページでのチェックボックスの最大選択数
+STOCKS_PER_PAGE = 100      # 銘柄マスタ一覧の1ページあたりの表示件数
 
 def get_ticker(stock_code):
     """
