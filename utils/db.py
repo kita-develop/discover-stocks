@@ -99,6 +99,83 @@ def init_db():
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_analysis_date_code ON analysis_results (analysis_date, stock_code);")
 
+
+    # ジャーナリング投票の候補銘柄を保存するテーブル
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS journal_vote_candidate (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vote_date TEXT NOT NULL,
+            stock_code TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(vote_date, stock_code)
+        )
+        """
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_journal_vote_candidate_date ON journal_vote_candidate (vote_date);")
+
+
+    # ジャーナリング投票の共通アンケート記録を保存するテーブル
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS journal_vote_base (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vote_date TEXT NOT NULL,
+            uuid TEXT NOT NULL,
+            questionnaire_version INTEGER NOT NULL DEFAULT 1,
+            market_state INTEGER NOT NULL,
+            confidence INTEGER NOT NULL,
+            feeling INTEGER NOT NULL,
+            position_ratio INTEGER NOT NULL,
+            leader_exists INTEGER NOT NULL,
+            leader_name_or_code TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_journal_vote_base_date ON journal_vote_base (vote_date);")
+
+
+    # ジャーナリング投票の入力を保存するテーブル
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS journal_vote (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vote_date TEXT NOT NULL,
+            vote_journal_id INTEGER NOT NULL,
+            stock_code TEXT NOT NULL,
+            score INTEGER NOT NULL,
+            wave_position TEXT NOT NULL,
+            baseline_direction TEXT NOT NULL,
+            volatility INTEGER NOT NULL,
+            exception_needed INTEGER NOT NULL,
+            exception_reason TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(vote_date, vote_journal_id, stock_code)
+        )
+        """
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_journal_vote_date ON journal_vote (vote_date);")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_journal_vote_date_code ON journal_vote (vote_date, stock_code);")
+
+
+    # ジャーナリング 講師へのフィードバック
+    # カラム暗号化を行うため別テーブルへ切り出し。
+    # 復号化キーをロストして復号化出来なくなった際に、ジャーナリングアンケートの投票結果へ影響を与えない様にする。
+    c.execute(
+        """
+        CREATE TABLE IF NOT EXISTS journal_vote_feedback (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vote_date TEXT NOT NULL,
+            vote_journal_id INTEGER NOT NULL,
+            teacher_feedback TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(vote_date, vote_journal_id)
+        )
+        """
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_journal_vote_feedback_date ON journal_vote_feedback (vote_date);")
+
     conn.commit()
     conn.close()
 

@@ -50,7 +50,7 @@ def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
     date_str = selected_date.strftime("%Y%m%d")
 
-    st.title("銘柄投票 ChatWork投稿")
+    st.title("銘柄コード登録結果 ChatWork投稿")
     st.write(f"【対象日】{selected_date_str}")
 
     # 銘柄コード登録結果を取得
@@ -59,7 +59,7 @@ def show(selected_date):
     if not results:
         st.warning("対象日の銘柄コード登録がありません。銘柄コード登録がある日付を選択してください。")
         st.markdown(
-            f'<a href="./?page=vote&date={date_str}" target="_self">← 銘柄投票ページに戻る</a>',
+            f'<a href="./?page=survey&date={date_str}" target="_self">← 銘柄コード登録ページに戻る</a>',
             unsafe_allow_html=True
         )
         return
@@ -85,7 +85,7 @@ def show(selected_date):
 
     if not chatwork.is_logged_in():
         st.info("ChatWorkにログインして投稿してください。")
-        chatwork.show_login_button(return_page="vote_chatwork_post", return_date=date_str)
+        chatwork.show_login_button(return_page="survey_chatwork_post", return_date=date_str)
     else:
         try:
             if not chatwork.is_room_member():
@@ -117,6 +117,6 @@ def show(selected_date):
 
     st.markdown("---")
     st.markdown(
-        f'<a href="./?page=vote&date={date_str}" target="_self">← 銘柄投票ページに戻る</a>',
+        f'<a href="./?page=survey&date={date_str}" target="_self">← 銘柄コード登録ページに戻る</a>',
         unsafe_allow_html=True
     )
