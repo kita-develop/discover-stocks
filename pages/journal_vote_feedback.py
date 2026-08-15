@@ -95,10 +95,10 @@ def _get_feedback_detail(selected_date_str, JOURNAL_ENCRYPTION_KEY):
 
 def _teacher_login():
     ## 初期設定（環境変数）があるか確認
-    if not "JORUNAL_TEACHER_PASSWORD" in st.secrets:
+    if not "JOURNAL_TEACHER_PASSWORD" in st.secrets:
         st.error("講師用パスワードが設定されていません。")
         return False
-    JORUNAL_TEACHER_PASSWORD = st.secrets["JORUNAL_TEACHER_PASSWORD"]
+    JOURNAL_TEACHER_PASSWORD = st.secrets["JOURNAL_TEACHER_PASSWORD"]
 
     ## ログイン期限
     if st.session_state.get("teacher_login_time"):
@@ -111,7 +111,7 @@ def _teacher_login():
         password = st.text_input("パスワード", type="password")
         submitted = st.form_submit_button("ログイン")
         if submitted:
-            if password == JORUNAL_TEACHER_PASSWORD:
+            if password == JOURNAL_TEACHER_PASSWORD:
                 return True
             st.error(
                 "ログインに失敗しました。"
