@@ -114,7 +114,7 @@ def _teacher_login():
             if password == JOURNAL_TEACHER_PASSWORD:
                 return True
             st.error(
-                "ログインに失敗しました。"
+                "ログインに失敗しました。\n\n"
                 "パスワードを確認してください。"
             )
 
