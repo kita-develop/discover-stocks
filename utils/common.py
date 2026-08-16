@@ -182,7 +182,7 @@ def get_journal_vote_uuid():
     st.components.v1.html(
         f"""
         <script>
-        document.cookie = "journal_vote_uuid={user_id}; Max-Age={max_age}; Path=/; SameSite=Lax";
+        document.cookie = "journal_vote_uuid={user_id}; Max-Age={max_age}; Path=/; SameSite=Lax; Secure";
         </script>
         """,
         height=0,
