@@ -82,7 +82,7 @@ def parse_moomoo_csv(file):
             df = pd.read_csv(file, encoding='utf-8')
 
         # 必要なカラムが存在するか確認
-        required_columns = ['売買方向', '銘柄コード', '銘柄名', '注文状況', '約定数量', '約定価格', '約定日時', '通貨', '取引手数料', '消費税']
+        required_columns = ['方向', '銘柄コード', '銘柄名', '注文状況', '約定数量', '約定価格', '約定日時', '通貨', '取引手数料', '消費税']
         # カラム名の空白削除などの正規化
         df.columns = [c.strip() for c in df.columns]
         
@@ -124,10 +124,10 @@ def parse_moomoo_csv(file):
             current_row_source = row if status == "約定済" else row
             parent_row_source = last_valid_row if last_valid_row is not None else row
             
-            # 銘柄コード、売買方向、通貨は親行から取得
+            # 銘柄コード、方向、通貨は親行から取得
             ticker = str(parent_row_source['銘柄コード']).strip()
             name = str(parent_row_source['銘柄名']).strip()
-            side = str(parent_row_source['売買方向']).strip()
+            side = str(parent_row_source['方向']).strip()
             currency = str(parent_row_source['通貨']).strip()
             
             # 約定価格、約定日時は現在の行から取得
