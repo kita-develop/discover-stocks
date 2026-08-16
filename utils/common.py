@@ -168,6 +168,16 @@ def decrypt_string(encrypted_text, JOURNAL_ENCRYPTION_KEY):
     return aesgcm.decrypt(nonce, ciphertext, None).decode()
 
 
+def safe_decrypt(encrypted_text, JOURNAL_ENCRYPTION_KEY):
+    if not encrypted_text:
+        return "復号に失敗しました。"
+
+    try:
+        return decrypt_string(encrypted_text, JOURNAL_ENCRYPTION_KEY)
+    except Exception:
+        return "復号に失敗しました。"
+
+
 ## ジャーナリング時のuuid取得
 def get_journal_vote_uuid():
     ## 投票画面アクセス毎にUUIDを取得する
