@@ -178,12 +178,11 @@ def get_journal_vote_uuid():
         user_id = str(uuid.uuid4())
 
     ## 新規登録 + 現行UUIDの期限更新
-    expires = datetime.now() + timedelta(days=JOURNAL_COOKIE_EXPIRE_DAYS)
     max_age = JOURNAL_COOKIE_EXPIRE_DAYS * 24 * 60 * 60
     st.components.v1.html(
         f"""
         <script>
-        document.cookie = "{"journal_vote_uuid"}={user_id}; Max-Age={max_age}; Path=/; SameSite=Lax";
+        document.cookie = "journal_vote_uuid={user_id}; Max-Age={max_age}; Path=/; SameSite=Lax";
         </script>
         """,
         height=0,
