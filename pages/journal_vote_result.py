@@ -112,7 +112,7 @@ def show(selected_date):
         _show_ratio_bar(display_journal_vote_base_df["market_state"], MARKET_STATE_SCORE_OPTIONS, f"market_state")
         st.caption(" / ".join(f"{k}: {v}" for k, v in MARKET_STATE_SCORE_OPTIONS.items()))
 
-        ## 自分の状態はけ
+        ## 自分の状態は
         st.text("自分の状態は")
         st.caption(f"平均: {avg_confidence:.1f}/{next(reversed(CONFIDENCE_SCORE_OPTIONS))}")
         _show_ratio_bar(display_journal_vote_base_df["confidence"], CONFIDENCE_SCORE_OPTIONS, f"confidence")
