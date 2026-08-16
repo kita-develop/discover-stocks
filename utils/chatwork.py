@@ -14,7 +14,6 @@ ChatWork OAuth & API連携ユーティリティ
 - st.context.cookies を使用してクッキーを読み取り（Streamlit 1.37+）
 """
 import base64
-import os
 import hashlib
 import hmac
 import secrets
@@ -26,18 +25,10 @@ from urllib.parse import urlencode, quote
 import requests
 import streamlit as st
 from cryptography.fernet import Fernet, InvalidToken
+from utils.common import get_secret
 
 
 # ====== 設定 ======
-def get_secret(key: str) -> str:
-    v = os.getenv(key)
-    if v:
-        return v
-    try:
-        return st.secrets[key]
-    except Exception:
-        return ""
-
 CLIENT_ID = get_secret("CHATWORK_CLIENT_ID")
 CLIENT_SECRET = get_secret("CHATWORK_CLIENT_SECRET")
 TARGET_ROOM_ID = int(get_secret("CHATWORK_ROOM_ID") or "0")

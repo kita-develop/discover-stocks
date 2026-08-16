@@ -4,7 +4,7 @@ import streamlit as st
 
 from datetime import datetime
 from utils.db import get_connection
-from utils.common import encrypt_string, get_journal_vote_uuid, QUESTIONNAIRE_VERSION, JOURNAL_SCORE_OPTIONS, WAVE_POSITION_OPTIONS, BASELINE_DIRECTION_OPTIONS, VOLATILITY_SCORE_OPTIONS, EXCEPTION_OPTIONS, LEADER_EXISTS_OPTIONS, MARKET_STATE_SCORE_OPTIONS, CONFIDENCE_SCORE_OPTIONS, FEELING_SCORE_OPTIONS, POSITION_RATIO_MIN, POSITION_RATIO_MAX
+from utils.common import encrypt_string, get_secret, get_journal_vote_uuid, QUESTIONNAIRE_VERSION, JOURNAL_SCORE_OPTIONS, WAVE_POSITION_OPTIONS, BASELINE_DIRECTION_OPTIONS, VOLATILITY_SCORE_OPTIONS, EXCEPTION_OPTIONS, LEADER_EXISTS_OPTIONS, MARKET_STATE_SCORE_OPTIONS, CONFIDENCE_SCORE_OPTIONS, FEELING_SCORE_OPTIONS, POSITION_RATIO_MIN, POSITION_RATIO_MAX
 
 def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
@@ -17,10 +17,11 @@ def show(selected_date):
         st.write("銘柄が登録されていません。")
         return
 
-    if not "JOURNAL_ENCRYPTION_KEY" in st.secrets:
+    encryption_key = get_secret("JOURNAL_ENCRYPTION_KEY")
+    if not encryption_key:
         st.error("暗号化キーが設定されていません。")
         return False
-    JOURNAL_ENCRYPTION_KEY = base64.b64decode(st.secrets["JOURNAL_ENCRYPTION_KEY"])
+    JOURNAL_ENCRYPTION_KEY = base64.b64decode(encryption_key)
 
     st.info("銘柄毎のアンケート、下部の共通アンケートを入力後、投票ボタンを押してください。")
     if 'journal_submitted' not in st.session_state:

@@ -31,6 +31,17 @@ POSITION_RATIO_GROUP = 30  ## ポジション量の表示区切り
 TEACHER_LOGIN_TIME_MINUTES = 60   ## 講師フィードバックのログイン有効時間（分）
 JOURNAL_COOKIE_EXPIRE_DAYS = 730  ## ジャーナリング投票結果参照のためのCookie期限 (日)
 
+def get_secret(key: str) -> str:
+    value = os.getenv(key)
+    if value:
+        return value
+
+    try:
+        return st.secrets[key]
+    except Exception:
+        return ""
+
+
 def get_ticker(stock_code):
     """
     銘柄コードからyfinance用のtickerを生成する関数

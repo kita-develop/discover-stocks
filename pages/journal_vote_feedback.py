@@ -4,7 +4,7 @@ import streamlit as st
 
 from datetime import datetime, timedelta
 from utils.db import get_connection
-from utils.common import TEACHER_LOGIN_TIME_MINUTES, safe_decrypt
+from utils.common import TEACHER_LOGIN_TIME_MINUTES, get_secret, safe_decrypt
 
 
 def show(selected_date):
@@ -14,10 +14,11 @@ def show(selected_date):
     st.write(f"【対象日】{selected_date_str}")
 
     ## 暗号化キー確認
-    if not "JOURNAL_ENCRYPTION_KEY" in st.secrets:
+    encryption_key = get_secret("JOURNAL_ENCRYPTION_KEY")
+    if not encryption_key:
         st.error("暗号化キーが設定されていません。")
         return False
-    JOURNAL_ENCRYPTION_KEY = base64.b64decode(st.secrets["JOURNAL_ENCRYPTION_KEY"])
+    JOURNAL_ENCRYPTION_KEY = base64.b64decode(encryption_key)
 
     ## 簡易ログインフォーム
     ## https://www.chatwork.com/#!rid379516146-2138915098071539712
@@ -95,10 +96,10 @@ def _get_feedback_detail(selected_date_str, JOURNAL_ENCRYPTION_KEY):
 
 def _teacher_login():
     ## 初期設定（環境変数）があるか確認
-    if not "JOURNAL_TEACHER_PASSWORD" in st.secrets:
+    JOURNAL_TEACHER_PASSWORD = get_secret("JOURNAL_TEACHER_PASSWORD")
+    if not JOURNAL_TEACHER_PASSWORD:
         st.error("講師用パスワードが設定されていません。")
         return False
-    JOURNAL_TEACHER_PASSWORD = st.secrets["JOURNAL_TEACHER_PASSWORD"]
 
     ## ログイン期限
     if st.session_state.get("teacher_login_time"):

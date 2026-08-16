@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.db import get_connection
-from utils.common import safe_decrypt, get_journal_vote_uuid, JOURNAL_SCORE_OPTIONS, WAVE_POSITION_OPTIONS, BASELINE_DIRECTION_OPTIONS, VOLATILITY_SCORE_OPTIONS, EXCEPTION_OPTIONS, LEADER_EXISTS_OPTIONS, MARKET_STATE_SCORE_OPTIONS, CONFIDENCE_SCORE_OPTIONS, FEELING_SCORE_OPTIONS
+from utils.common import safe_decrypt, get_secret, get_journal_vote_uuid, JOURNAL_SCORE_OPTIONS, WAVE_POSITION_OPTIONS, BASELINE_DIRECTION_OPTIONS, VOLATILITY_SCORE_OPTIONS, EXCEPTION_OPTIONS, LEADER_EXISTS_OPTIONS, MARKET_STATE_SCORE_OPTIONS, CONFIDENCE_SCORE_OPTIONS, FEELING_SCORE_OPTIONS
 
 def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
@@ -12,10 +12,11 @@ def show(selected_date):
     st.write(f"【対象日】{selected_date_str}")
 
     ## 暗号化キー確認
-    if not "JOURNAL_ENCRYPTION_KEY" in st.secrets:
+    encryption_key = get_secret("JOURNAL_ENCRYPTION_KEY")
+    if not encryption_key:
         st.error("暗号化キーが設定されていません。")
         return False
-    JOURNAL_ENCRYPTION_KEY = base64.b64decode(st.secrets["JOURNAL_ENCRYPTION_KEY"])
+    JOURNAL_ENCRYPTION_KEY = base64.b64decode(encryption_key)
 
     uuid = get_journal_vote_uuid()
     if uuid is None:
