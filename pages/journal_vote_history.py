@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.db import get_connection
-from utils.common import decrypt_string, get_journal_vote_uuid, JOURNAL_SCORE_OPTIONS, WAVE_POSITION_OPTIONS, BASELINE_DIRECTION_OPTIONS, VOLATILITY_SCORE_OPTIONS, EXCEPTION_OPTIONS, LEADER_EXISTS_OPTIONS, MARKET_STATE_SCORE_OPTIONS, CONFIDENCE_SCORE_OPTIONS, FEELING_SCORE_OPTIONS
+from utils.common import safe_decrypt, get_journal_vote_uuid, JOURNAL_SCORE_OPTIONS, WAVE_POSITION_OPTIONS, BASELINE_DIRECTION_OPTIONS, VOLATILITY_SCORE_OPTIONS, EXCEPTION_OPTIONS, LEADER_EXISTS_OPTIONS, MARKET_STATE_SCORE_OPTIONS, CONFIDENCE_SCORE_OPTIONS, FEELING_SCORE_OPTIONS
 
 def show(selected_date):
     selected_date_str = selected_date.strftime("%Y-%m-%d")
@@ -135,7 +135,7 @@ def _get_teacher_feedback(journal_id, selected_date_str, JOURNAL_ENCRYPTION_KEY)
             params=(journal_id, selected_date_str)
         )
         ## フィードバック復号化
-        df["teacher_feedback"] = df["teacher_feedback"].apply(lambda x: decrypt_string(x, JOURNAL_ENCRYPTION_KEY))
+        df["teacher_feedback"] = df["teacher_feedback"].apply(lambda x: safe_decrypt(x, JOURNAL_ENCRYPTION_KEY))
         return df
 
     finally:

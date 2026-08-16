@@ -4,7 +4,7 @@ import streamlit as st
 
 from datetime import datetime, timedelta
 from utils.db import get_connection
-from utils.common import TEACHER_LOGIN_TIME_MINUTES, decrypt_string
+from utils.common import TEACHER_LOGIN_TIME_MINUTES, safe_decrypt
 
 
 def show(selected_date):
@@ -86,7 +86,7 @@ def _get_feedback_detail(selected_date_str, JOURNAL_ENCRYPTION_KEY):
         )
 
         ## フィードバック復号化
-        df["teacher_feedback"] = df["teacher_feedback"].apply(lambda x: decrypt_string(x, JOURNAL_ENCRYPTION_KEY))
+        df["teacher_feedback"] = df["teacher_feedback"].apply(lambda x: safe_decrypt(x, JOURNAL_ENCRYPTION_KEY))
 
         return df
     finally:
