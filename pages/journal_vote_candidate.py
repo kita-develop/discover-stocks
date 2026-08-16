@@ -122,6 +122,13 @@ def _save_candidates(selected_date_str, codes):
     if len(normalized_codes) > JOURNAL_CANDIDATE_COUNT:
         return False, f"銘柄コードは最大{JOURNAL_CANDIDATE_COUNT}件です。"
 
+    duplicate_codes = list(dict.fromkeys(
+        code for code in normalized_codes
+        if normalized_codes.count(code) > 1
+    ))
+    if duplicate_codes:
+        return False, f"同じ銘柄コードを重複して登録できません: {', '.join(duplicate_codes)}"
+
     invalid_codes = [code for code in normalized_codes if not re.match(r'^[A-Z0-9.]+$', code)]
     if invalid_codes:
         message = f"以下の銘柄コードが不正です: {', '.join(invalid_codes)}"
