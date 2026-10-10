@@ -1,4 +1,5 @@
 import re
+import time
 import pandas as pd
 import streamlit as st
 
@@ -54,9 +55,9 @@ def show(selected_date):
             codes = [st.session_state[f"journal_candidate_code_{i + 1}"] for i in range(JOURNAL_CANDIDATE_COUNT)]
             ok, msg = _save_candidates(selected_date_str, codes)
             if not ok:
-                message.error(msg)
+                st.error(msg)
                 return False
-            st.rerun()
+            st.success(msg)
 
         if reset:
             for key in list(st.session_state):
@@ -64,9 +65,9 @@ def show(selected_date):
                     del st.session_state[key]
             ok, msg = _clear_candidates(selected_date_str)
             if not ok:
-                message.error(msg)
+                st.error(msg)
                 return False
-            st.rerun()
+            st.success(msg)
 
     else:
         st.write("対象日のデータはまだありません。")
