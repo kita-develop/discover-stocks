@@ -31,6 +31,12 @@ POSITION_RATIO_GROUP = 30  ## ポジション量の表示区切り
 TEACHER_LOGIN_TIME_MINUTES = 60   ## 講師フィードバックのログイン有効時間（分）
 JOURNAL_COOKIE_EXPIRE_DAYS = 730  ## ジャーナリング投票結果参照のためのCookie期限 (日)
 
+## 銘柄コード登録 PEAK FINDERレポートで利用するURL
+PEAK_FINDER_REPORT_URLS = {
+    "jp": "https://report.peakfinder.info/peak-finder.html",
+    "us": "https://report.peakfinder.info/peak-finder-us.html",
+}
+
 def get_secret(key: str) -> str:
     value = os.getenv(key)
     if value:
