@@ -2,7 +2,7 @@ import streamlit as st
 from utils.db import init_db
 from utils.common import get_date_from_params
 from utils import chatwork
-from pages import top, survey, vote, survey_chatwork_post, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl, score_ranking, chatwork_post, journal_vote_candidate, journal_vote, journal_vote_result, journal_vote_history, journal_vote_feedback
+from pages import top, survey, survey_pf_post, survey_chatwork_post, vote, result, result_graph, stock_master, db_management, stock_evaluation, stock_analysis, investment_simulation, moomoo_pnl, score_ranking, chatwork_post, journal_vote_candidate, journal_vote, journal_vote_result, journal_vote_history, journal_vote_feedback
 
 # DB初期化
 init_db()
@@ -41,6 +41,7 @@ st.sidebar.title("ページ選択")
 st.sidebar.markdown(f'<a href="./?page=top&date={date_str}" target="_self">トップページ</a>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 st.sidebar.markdown(f'<a href="./?page=survey&date={date_str}" target="_self">① 銘柄コード登録</a>', unsafe_allow_html=True)
+st.sidebar.markdown(f'<a href="./?page=survey_pf_post&date={date_str}" target="_self">①-1 銘柄コード登録 PEAK FINDER レポート</a>', unsafe_allow_html=True)
 st.sidebar.markdown(f'<a href="./?page=survey_chatwork_post&date={date_str}" target="_self">①-2 銘柄コード登録結果 ChatWork投稿</a>', unsafe_allow_html=True)
 st.sidebar.markdown("---")
 st.sidebar.markdown(f'<a href="./?page=vote&date={date_str}" target="_self">② 銘柄投票</a>', unsafe_allow_html=True)
@@ -72,10 +73,12 @@ elif page == 'stock_master':
     stock_master.show(selected_date)
 elif page == 'survey':
     survey.show(selected_date)
-elif page == 'vote':
-    vote.show(selected_date)
+elif page == 'survey_pf_post':
+    survey_pf_post.show(selected_date)
 elif page == 'survey_chatwork_post':
     survey_chatwork_post.show(selected_date)
+elif page == 'vote':
+    vote.show(selected_date)
 elif page == 'result':
     result.show(selected_date)
 elif page == 'chatwork_post':
