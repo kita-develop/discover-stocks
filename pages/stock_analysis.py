@@ -7,6 +7,7 @@ from utils.db import get_connection
 from io import BytesIO
 import mplfinance as mpf
 import matplotlib
+import matplotlib.pyplot as plt
 import os
 import zipfile
 from matplotlib.font_manager import FontProperties
@@ -64,33 +65,37 @@ def get_stock_data(stock_code, start_date, end_date):
         st.error(f"データ取得中にエラーが発生しました: {str(e)}")
         return pd.DataFrame()
 
-def create_candlestick_chart(df):
+def prepare_chart_data(df: pd.DataFrame) -> pd.DataFrame:
+    """元データを変更せず、四本値がそろった行だけをチャート用に取り出す。"""
+    chart_df = df.copy()
+    if not isinstance(chart_df.index, pd.DatetimeIndex):
+        chart_df.index = pd.DatetimeIndex(chart_df.index)
+    if isinstance(chart_df.columns, pd.MultiIndex):
+        chart_df.columns = chart_df.columns.get_level_values(0)
+    return chart_df.dropna(subset=['Open', 'High', 'Low', 'Close'])
+
+
+def create_candlestick_chart(df: pd.DataFrame) -> tuple[BytesIO | None, str]:
     """
     ローソク足チャートを作成する関数
-    データ量が250ポイント以上の場合は自動的に折れ線グラフに切り替え
+    取得データが250ポイントを超える場合は自動的に折れ線グラフに切り替え
     
     Parameters:
     df (DataFrame): 株価データ
     
     Returns:
-    bytes: チャート画像のバイナリデータ
+    tuple: チャート画像（有効な四本値がない場合はNone）とチャート種別
     """
-    # インデックスがDateTimeIndexであることを確認
-    if not isinstance(df.index, pd.DatetimeIndex):
-        df.index = pd.DatetimeIndex(df.index)
-        
-    # マルチインデックスの場合はレベル0を選択
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-        
-    # mplfinanceで必要なOHLCV形式に変換
-    df_plot = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+    df_plot = prepare_chart_data(df)[['Open', 'High', 'Low', 'Close', 'Volume']]
     
     # データポイント数に基づいてチャートタイプを決定
-    if len(df_plot) > 250:  # 約1年分の取引日
+    if len(df) > 250:  # 約1年分の取引日
         chart_type = 'line'
     else:
         chart_type = 'candle'
+
+    if df_plot.empty:
+        return None, chart_type
     
     # スタイルの設定
     mpf_style = mpf.make_mpf_style(base_mpf_style='yahoo', marketcolors=mpf.make_marketcolors(
@@ -105,18 +110,22 @@ def create_candlestick_chart(df):
     buf = BytesIO()
     
     # チャートを作成
+    show_volume = bool(df_plot['Volume'].notna().any())
     fig, axes = mpf.plot(
         df_plot,
         type=chart_type,  # 動的にチャートタイプを設定
-        volume=True,
+        volume=show_volume,
         style=mpf_style,
         returnfig=True,
         figsize=(12, 8),
-        panel_ratios=(4, 1)
+        panel_ratios=(4, 1) if show_volume else (1,)
     )
     
     # チャートをバイト形式で保存
-    fig.savefig(buf, format='png', bbox_inches='tight')
+    try:
+        fig.savefig(buf, format='png', bbox_inches='tight')
+    finally:
+        plt.close(fig)
     buf.seek(0)
     
     return buf, chart_type  # チャートタイプも返す
@@ -321,15 +330,19 @@ def show(selected_date):
                 df = get_stock_data(code, start_date_str, end_date_str)
                 
                 if not df.empty:
+                    df = df.copy()
+                    if isinstance(df.columns, pd.MultiIndex):
+                        df.columns = df.columns.get_level_values(0)
                     # セッション状態にデータを保存
                     st.session_state['stock_data'][code] = df
                     
                     # ローソク足チャートの作成と保存
                     buf, chart_type = create_candlestick_chart(df)
-                    st.session_state['charts'][code] = {
-                        'buf': buf,
-                        'type': chart_type
-                    }
+                    if buf is not None:
+                        st.session_state['charts'][code] = {
+                            'buf': buf,
+                            'type': chart_type
+                        }
                 else:
                     st.warning(f"{code} のデータが取得できませんでした。")
                 
@@ -362,7 +375,7 @@ def show(selected_date):
                     # 列幅の自動調整
                     for idx, col in enumerate(df.columns):
                         max_length = max(
-                            df[col].astype(str).apply(len).max(),
+                            df[col].astype("string").fillna("").str.len().max(),
                             len(str(col))
                         )
                         worksheet.column_dimensions[chr(65 + idx + 1)].width = max_length + 2  # +1 for index column
@@ -421,18 +434,22 @@ def show(selected_date):
             st.dataframe(df)
             st.write("【チャート】")
             
-            # データフレームの構造を確認して適切に処理
-            if isinstance(df.columns, pd.MultiIndex):
-                # マルチインデックスの場合はレベル0を選択
-                chart_df = df.copy()
-                chart_df.columns = chart_df.columns.get_level_values(0)  # 最初のレベルのカラム名を取得
-                st.line_chart(chart_df[["Open", "Close", "High", "Low"]])
+            chart_df = prepare_chart_data(df)
+            excluded_rows = len(df) - len(chart_df)
+            if excluded_rows:
+                st.warning(
+                    f"{code}: 始値・高値・安値・終値に欠損がある{excluded_rows}件を"
+                    "両方のチャートから除外しました。表・Excel・CSVには元データを残しています。"
+                )
+            if chart_df.empty:
+                st.info(f"{code}: 四本値がそろったデータがないため、チャートを表示できません。")
             else:
-                # 通常のカラム構造の場合
-                st.line_chart(df[["Open", "Close", "High", "Low"]])
+                st.line_chart(chart_df[["Open", "Close", "High", "Low"]])
+                if chart_df['Volume'].isna().any():
+                    st.caption("出来高の欠損は補完しません。全件欠損の場合、出来高パネルを表示しません。")
             
             # ローソク足チャートの表示
-            if code in st.session_state['charts']:
+            if not chart_df.empty and code in st.session_state['charts']:
                 chart_info = st.session_state['charts'][code]
                 chart_type_text = "ローソク足" if chart_info['type'] == 'candle' else "折れ線"
                 st.image(chart_info['buf'], caption=f"{get_stock_name(code)} ({code}) - {chart_type_text}チャート", use_container_width=True)
