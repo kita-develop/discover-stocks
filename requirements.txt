@@ -9,3 +9,4 @@ mplfinance
 altair
 scikit-learn
 cryptography
+six==1.17.0
